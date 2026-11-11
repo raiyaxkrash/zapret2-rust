@@ -11,6 +11,8 @@ pub const DEFAULT_APP_UPDATE_URL: &str = "https://github.com/raiyaxkrash/zapret2
 pub struct Settings {
     /// id выбранной стратегии ("custom" — свои параметры).
     pub strategy: String,
+    /// Отдельная стратегия для YouTube; пустая строка — как основная.
+    pub youtube_strategy: String,
 
     pub youtube: bool,
     pub discord: bool,
@@ -27,8 +29,12 @@ pub struct Settings {
     pub debug_log: bool,
 
     pub engine_auto_update: bool,
+    pub content_auto_update: bool,
     pub app_auto_check: bool,
     pub app_update_url: String,
+
+    /// "system" | "light" | "dark"
+    pub theme: String,
 
     pub custom_tls: String,
     pub custom_http: String,
@@ -39,6 +45,7 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             strategy: "fake_multisplit_md5".into(),
+            youtube_strategy: String::new(),
             youtube: true,
             discord: true,
             discord_voice: true,
@@ -51,8 +58,10 @@ impl Default for Settings {
             close_to_tray: true,
             debug_log: false,
             engine_auto_update: true,
+            content_auto_update: true,
             app_auto_check: true,
             app_update_url: DEFAULT_APP_UPDATE_URL.into(),
+            theme: "system".into(),
             custom_tls: "--payload=tls_client_hello --lua-desync=fake:blob=tls_google:tcp_md5:repeats=6 --lua-desync=multisplit:pos=1,midsld".into(),
             custom_http: "--payload=http_req --lua-desync=fake:blob=fake_default_http:tcp_md5:repeats=6 --lua-desync=multisplit:pos=method+2".into(),
             custom_quic: "--payload=quic_initial --lua-desync=fake:blob=quic_google:repeats=6".into(),

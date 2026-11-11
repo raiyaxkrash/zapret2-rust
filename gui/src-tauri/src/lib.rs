@@ -1,6 +1,8 @@
 mod autostart;
+mod content;
 mod engine;
 mod paths;
+mod platform;
 mod presets;
 mod settings;
 mod tester;
@@ -10,14 +12,14 @@ mod zapret_update;
 use std::{
     fs,
     sync::{atomic::AtomicBool, Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use serde::Serialize;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager, State, WindowEvent, Wry,
+    AppHandle, Emitter, Manager, PhysicalPosition, Rect, State, WebviewUrl, WebviewWindowBuilder, WindowEvent, Wry,
 };
 use tauri_plugin_updater::UpdaterExt;
 
@@ -37,20 +39,31 @@ pub struct AppState {
     pub last_report: Mutex<Option<TestReport>>,
     pub busy: tokio::sync::Mutex<()>,
     tray_toggle: Mutex<Option<MenuItem<Wry>>>,
+    /// Когда мини-окно в трее скрылось из-за потери фокуса: щелчок по значку
+    /// сначала снимает фокус, и без этой отметки окно тут же открылось бы снова.
+    flyout_hidden_at: Mutex<Option<Instant>>,
 }
 
 type CmdResult<T> = Result<T, String>;
 
 // ---------------------------------------------------------------- engine control
 
-/// Запускает winws2 с указанной стратегией и проверяет, что он не упал сразу.
-pub async fn start_with(app: &AppHandle, settings: &Settings, strategy_id: &str) -> CmdResult<()> {
-    let state = app.state::<AppState>();
-    let presets = Presets::load(&state.paths)?;
+/// Аргументы winws2. `youtube_id` — стратегия для YouTube; None — из настроек
+/// (пустая настройка означает «как основная»).
+pub fn args_for(paths: &Paths, settings: &Settings, strategy_id: &str, youtube_id: Option<&str>) -> CmdResult<Vec<String>> {
+    let presets = Presets::load(paths)?;
     let strategy = presets
         .find(settings, strategy_id)
         .ok_or_else(|| format!("Стратегия «{strategy_id}» не найдена"))?;
-    let args = build_args(settings, &presets, &strategy, &state.paths)?;
+    let yt_id = youtube_id.unwrap_or(&settings.youtube_strategy);
+    let yt = if yt_id.is_empty() { None } else { presets.find(settings, yt_id) }.unwrap_or_else(|| strategy.clone());
+    build_args(settings, &presets, &strategy, &yt, paths)
+}
+
+/// Запускает winws2 с указанной стратегией и проверяет, что он не упал сразу.
+pub async fn start_with(app: &AppHandle, settings: &Settings, strategy_id: &str, youtube_id: Option<&str>) -> CmdResult<()> {
+    let state = app.state::<AppState>();
+    let args = args_for(&state.paths, settings, strategy_id, youtube_id)?;
     let conflicts = state.engine.conflicts();
     if !conflicts.is_empty() {
         let names: Vec<_> = conflicts.iter().map(|c| c.name.clone()).collect();
@@ -74,7 +87,7 @@ pub async fn start_with(app: &AppHandle, settings: &Settings, strategy_id: &str)
 
 async fn start_current(app: &AppHandle) -> CmdResult<()> {
     let settings = app.state::<AppState>().settings.lock().unwrap().clone();
-    let r = start_with(app, &settings, &settings.strategy).await;
+    let r = start_with(app, &settings, &settings.strategy, None).await;
     if let Err(e) = &r {
         let state = app.state::<AppState>();
         state.engine.log(app, format!("[app] Ошибка: {e}"));
@@ -111,6 +124,67 @@ fn show_main(app: &AppHandle) {
     }
 }
 
+// ---------------------------------------------------------------- tray flyout
+
+const FLYOUT_W: f64 = 360.0;
+const FLYOUT_H: f64 = 392.0;
+
+fn create_flyout(app: &AppHandle) -> tauri::Result<()> {
+    let w = WebviewWindowBuilder::new(app, "tray", WebviewUrl::App("tray.html".into()))
+        .title("Zapret2")
+        .inner_size(FLYOUT_W, FLYOUT_H)
+        .resizable(false)
+        .decorations(false)
+        .shadow(true)
+        .background_color(tauri::window::Color(11, 10, 20, 255))
+        .skip_taskbar(true)
+        .always_on_top(true)
+        .visible(false)
+        .focused(true)
+        .build()?;
+    let theme = app.state::<AppState>().settings.lock().unwrap().theme.clone();
+    platform::apply_to(&w, match theme.as_str() {
+        "light" => Some(tauri::Theme::Light),
+        "dark" => Some(tauri::Theme::Dark),
+        _ => None,
+    });
+    Ok(())
+}
+
+/// Показывает или прячет мини-окно над значком в трее.
+fn toggle_flyout(app: &AppHandle, icon: Rect) {
+    let Some(w) = app.get_webview_window("tray") else { return };
+    if w.is_visible().unwrap_or(false) {
+        let _ = w.hide();
+        return;
+    }
+    let state = app.state::<AppState>();
+    if let Some(t) = *state.flyout_hidden_at.lock().unwrap() {
+        if t.elapsed() < Duration::from_millis(300) {
+            return;
+        }
+    }
+
+    let pos = icon.position.to_physical::<f64>(1.0);
+    let size = icon.size.to_physical::<f64>(1.0);
+    let (cx, cy) = (pos.x + size.width / 2.0, pos.y + size.height / 2.0);
+    if let Ok(Some(m)) = app.monitor_from_point(cx, cy) {
+        let scale = m.scale_factor();
+        let (fw, fh) = (FLYOUT_W * scale, FLYOUT_H * scale);
+        let wa = m.work_area();
+        let (ax, ay) = (wa.position.x as f64, wa.position.y as f64);
+        let (aw, ah) = (wa.size.width as f64, wa.size.height as f64);
+        let gap = 12.0 * scale;
+        let x = (cx - fw / 2.0).clamp(ax + gap, ax + aw - fw - gap);
+        // Панель задач снизу (обычно) — окно над значком, иначе под ним.
+        let y = if cy > ay + ah / 2.0 { ay + ah - fh - gap } else { ay + gap };
+        let _ = w.set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32));
+    }
+    let _ = w.show();
+    let _ = w.set_focus();
+    let _ = app.emit_to("tray", "flyout-shown", ());
+}
+
 // ---------------------------------------------------------------- commands
 
 #[derive(Serialize)]
@@ -125,6 +199,8 @@ struct AppInfo {
     user_domains: usize,
     auto_domains: usize,
     autostart: bool,
+    content_version: u64,
+    platform: platform::Platform,
 }
 
 #[tauri::command]
@@ -141,6 +217,63 @@ fn get_state(app: AppHandle, state: State<'_, AppState>) -> AppInfo {
         user_domains: paths::count_domains(&state.paths.lists.join("user.txt")),
         auto_domains: paths::count_domains(&state.paths.auto_list()),
         autostart: autostart::is_enabled(),
+        content_version: state.paths.content_version(),
+        platform: platform::info(),
+    }
+}
+
+#[tauri::command]
+fn open_main(app: AppHandle, page: Option<String>) {
+    if let Some(w) = app.get_webview_window("tray") {
+        let _ = w.hide();
+    }
+    show_main(&app);
+    if let Some(p) = page {
+        let _ = app.emit_to("main", "navigate", p);
+    }
+}
+
+#[tauri::command]
+fn hide_flyout(app: AppHandle) {
+    if let Some(w) = app.get_webview_window("tray") {
+        let _ = w.hide();
+    }
+}
+
+#[tauri::command]
+fn quit_app(app: AppHandle) {
+    app.state::<AppState>().engine.stop(&app);
+    app.exit(0);
+}
+
+#[tauri::command]
+async fn check_content_update(app: AppHandle) -> CmdResult<content::ContentInfo> {
+    let paths = app.state::<AppState>().paths.clone();
+    content::check(&paths).await
+}
+
+#[tauri::command]
+async fn update_content(app: AppHandle) -> CmdResult<String> {
+    update_content_inner(&app).await
+}
+
+async fn update_content_inner(app: &AppHandle) -> CmdResult<String> {
+    let state = app.state::<AppState>();
+    let paths = state.paths.clone();
+    match content::update(&paths).await? {
+        None => Ok(format!("Стратегии и списки актуальны (версия {})", paths.content_version())),
+        Some(v) => {
+            let msg = format!("Стратегии и списки обновлены до версии {v}");
+            state.engine.log(app, format!("[app] {msg}"));
+            {
+                let _guard = state.busy.lock().await;
+                if !state.testing.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = restart_if_running(app).await;
+                }
+            }
+            let _ = app.emit("content-updated", v);
+            Ok(msg)
+        }
     }
 }
 
@@ -180,9 +313,13 @@ async fn save_settings(app: AppHandle, new: Settings) -> CmdResult<Settings> {
     }
     new.save(&state.paths.settings_file())?;
     *state.settings.lock().unwrap() = new.clone();
+    if old.theme != new.theme {
+        platform::apply_theme(&app, &new.theme);
+    }
 
     // Перезапускаем обход только если поменялось то, что влияет на winws2.
     let engine_changed = old.strategy != new.strategy
+        || old.youtube_strategy != new.youtube_strategy
         || old.youtube != new.youtube
         || old.discord != new.discord
         || old.discord_voice != new.discord_voice
@@ -202,9 +339,7 @@ async fn save_settings(app: AppHandle, new: Settings) -> CmdResult<Settings> {
 #[tauri::command]
 fn get_command_line(state: State<'_, AppState>) -> CmdResult<String> {
     let settings = state.settings.lock().unwrap().clone();
-    let presets = Presets::load(&state.paths)?;
-    let strategy = presets.find(&settings, &settings.strategy).ok_or("Стратегия не найдена")?;
-    let args = build_args(&settings, &presets, &strategy, &state.paths)?;
+    let args = args_for(&state.paths, &settings, &settings.strategy, None)?;
     Ok(format!("cd /d \"{}\"\nengine\\bin\\winws2.exe {}", state.paths.root.display(), util::join_args(&args)))
 }
 
@@ -415,6 +550,11 @@ fn spawn_background(app: AppHandle) {
                     Err(e) => app.state::<AppState>().engine.log(&app, format!("[app] Проверка обновлений zapret2: {e}")),
                 }
             }
+            if settings.content_auto_update {
+                if let Err(e) = update_content_inner(&app).await {
+                    app.state::<AppState>().engine.log(&app, format!("[app] Обновление стратегий и списков: {e}"));
+                }
+            }
             if settings.app_auto_check && !settings.app_update_url.trim().is_empty() {
                 if let Ok((info, Some(_))) = find_app_update(&app).await {
                     let _ = app.emit("app-update-available", info);
@@ -460,10 +600,14 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             }
             _ => {}
         })
-        .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
-                show_main(tray.app_handle());
+        .on_tray_icon_event(|tray, event| match event {
+            TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, rect, .. } => {
+                toggle_flyout(tray.app_handle(), rect);
             }
+            TrayIconEvent::DoubleClick { button: MouseButton::Left, .. } => {
+                open_main(tray.app_handle().clone(), None);
+            }
+            _ => {}
         })
         .build(app)?;
     Ok(())
@@ -497,8 +641,11 @@ pub fn run() {
                 last_report: Mutex::new(None),
                 busy: tokio::sync::Mutex::new(()),
                 tray_toggle: Mutex::new(None),
+                flyout_hidden_at: Mutex::new(None),
             });
 
+            platform::apply_theme(&handle, &settings.theme);
+            create_flyout(&handle)?;
             build_tray(&handle)?;
 
             if !(autostarted && settings.start_minimized) {
@@ -518,11 +665,31 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            let app = window.app_handle();
+            if window.label() == "tray" {
+                match event {
+                    WindowEvent::Focused(false) => {
+                        if window.is_visible().unwrap_or(false) {
+                            *app.state::<AppState>().flyout_hidden_at.lock().unwrap() = Some(Instant::now());
+                            let _ = window.hide();
+                        }
+                    }
+                    WindowEvent::CloseRequested { api, .. } => {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
+                    _ => {}
+                }
+                return;
+            }
             if let WindowEvent::CloseRequested { api, .. } = event {
-                let to_tray = window.app_handle().state::<AppState>().settings.lock().unwrap().close_to_tray;
+                let to_tray = app.state::<AppState>().settings.lock().unwrap().close_to_tray;
                 if to_tray {
                     api.prevent_close();
                     let _ = window.hide();
+                } else {
+                    app.state::<AppState>().engine.stop(app);
+                    app.exit(0);
                 }
             }
         })
@@ -547,6 +714,11 @@ pub fn run() {
             install_engine_update,
             check_app_update,
             install_app_update,
+            open_main,
+            hide_flyout,
+            quit_app,
+            check_content_update,
+            update_content,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

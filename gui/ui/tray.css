@@ -1,0 +1,65 @@
+/* Мини-окно в трее. */
+body { height: 100vh; }
+body::before { inset: -40%; }
+
+.fly { height: 100%; display: flex; flex-direction: column; padding: 14px 16px 0; }
+
+.fly-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.fly-logo { width: 22px; height: 22px; }
+.fly-title { font: 800 15px/1 var(--font-display); flex: 1; letter-spacing: .2px; }
+
+.icon-btn {
+  width: 34px; height: 34px; border: 0; border-radius: 11px; background: transparent; color: var(--text-2);
+  display: grid; place-items: center; transition: background .2s, color .2s, transform .2s var(--spring);
+}
+.icon-btn .ico { width: 17px; height: 17px; }
+.icon-btn:hover { background: var(--glass-2); color: var(--text); }
+.icon-btn:active { transform: scale(.92); }
+
+.fly-power {
+  display: flex; align-items: center; gap: 14px; width: 100%; padding: 14px; text-align: left;
+  border-radius: var(--r-lg); border: 1px solid var(--line); background: var(--glass); backdrop-filter: blur(24px);
+  transition: background .3s, border-color .3s, transform .2s var(--spring);
+}
+.fly-power:hover { background: var(--glass-2); }
+.fly-power:active { transform: scale(.98); }
+.fly-power.on { background: linear-gradient(135deg, rgba(16, 185, 129, .2), rgba(6, 182, 212, .12)); border-color: rgba(52, 211, 153, .35); }
+.fly-power-ico {
+  position: relative; width: 52px; height: 52px; border-radius: 50%; flex-shrink: 0; display: grid; place-items: center;
+  background: var(--glass-2); color: var(--text-2); box-shadow: inset 0 0 0 1px var(--line-2);
+  transition: background .3s, color .3s, box-shadow .4s;
+}
+.fly-power-ico .ico { width: 24px; height: 24px; }
+.fly-power.on .fly-power-ico { background: var(--grad-on); color: #fff; box-shadow: 0 0 0 6px rgba(52, 211, 153, .14), 0 0 26px rgba(16, 185, 129, .55); }
+.spinner { position: absolute; inset: -6px; border-radius: 50%; border: 2.5px solid transparent; border-top-color: var(--pink); border-right-color: var(--violet); opacity: 0; }
+.fly-power.busy .spinner { opacity: 1; animation: spin .9s linear infinite; }
+.fly-power-text { display: flex; flex-direction: column; min-width: 0; }
+.fly-state { font: 800 17px/1.2 var(--font-display); }
+.fly-power.on .fly-state { background: var(--grad-on); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.fly-sub { font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+
+.fly-label { font: 800 10.5px/1 var(--font-display); text-transform: uppercase; letter-spacing: .14em; color: var(--text-3); margin: 14px 0 8px 2px; }
+
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.tile { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0; border: 0; background: none; color: var(--text-2); font-size: 11.5px; font-weight: 700; }
+.tile > .ico {
+  width: 100%; height: 50px; padding: 14px; border-radius: 15px; background: var(--glass); border: 1px solid var(--line);
+  transition: background .25s, color .25s, transform .25s var(--spring), box-shadow .25s;
+}
+.tile:hover > .ico { background: var(--glass-2); transform: translateY(-2px); }
+.tile:active > .ico { transform: scale(.94); }
+.tile.on { color: var(--text); }
+.tile.on > .ico { color: #fff; border-color: transparent; background: var(--grad); box-shadow: 0 6px 16px rgba(219, 39, 119, .35); }
+.tile[data-key="youtube"].on > .ico { background: linear-gradient(135deg, #ff4d4d, #db2777); }
+.tile[data-key="discord"].on > .ico { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
+.tile[data-key="discord_voice"].on > .ico { background: linear-gradient(135deg, #10b981, #06b6d4); }
+.tile[data-key="custom"].on > .ico { background: linear-gradient(135deg, #f59e0b, #f97316); }
+
+.fly-warn { margin-top: 12px; padding: 9px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; background: var(--mid-bg); color: var(--text); }
+.fly-warn.err { background: var(--bad-bg); }
+
+.fly-foot { margin: auto -16px 0; padding: 8px 8px 8px 10px; display: flex; align-items: center; gap: 4px; border-top: 1px solid var(--line); flex-shrink: 0; }
+.foot-btn { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border: 0; border-radius: 11px; background: transparent; color: var(--text); font-size: 13px; font-weight: 700; transition: background .2s; }
+.foot-btn:hover { background: var(--glass-2); }
+.foot-btn .ico { width: 16px; height: 16px; color: var(--pink); }
+.foot-spacer { flex: 1; }

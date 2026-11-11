@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "quic_default": [
     "--payload=quic_initial",
     "--lua-desync=fake:blob=quic_google:repeats=6"
@@ -9,6 +9,21 @@
     "--lua-desync=fake:blob=0x00000000000000000000000000000000:repeats=6"
   ],
   "strategies": [
+    {
+      "id": "fake_seqovl_badseq",
+      "name": "Фейк + наложение (badseq)",
+      "description": "Часто лучший вариант для YouTube: фейк с неверным ACK, затем первый сегмент с наложенным фейковым ClientHello от www.google.com.",
+      "tls": [
+        "--payload=tls_client_hello",
+        "--lua-desync=fake:blob=tls_google:tcp_ack=-66000:tcp_ts_up:repeats=8",
+        "--lua-desync=multisplit:pos=1:seqovl=681:seqovl_pattern=tls_google"
+      ],
+      "http": [
+        "--payload=http_req",
+        "--lua-desync=fake:blob=fake_default_http:tcp_ack=-66000:tcp_ts_up:repeats=8",
+        "--lua-desync=multisplit:pos=method+2:seqovl=1"
+      ]
+    },
     {
       "id": "fake_multisplit_md5",
       "name": "Фейк + разрезание (MD5)",

@@ -24,6 +24,8 @@ pub struct Paths {
     /// и писать (автосписок) может только сюда.
     pub low: PathBuf,
     pub resources: PathBuf,
+    /// Стратегии и встроенные списки, загруженные из репозитория на GitHub.
+    pub remote: PathBuf,
 }
 
 impl Paths {
@@ -39,6 +41,7 @@ impl Paths {
         let p = Paths {
             engine: root.join("engine"),
             lists: root.join("lists"),
+            remote: root.join("remote"),
             root,
             low,
             resources,
@@ -57,8 +60,42 @@ impl Paths {
         self.root.join("settings.json")
     }
 
+    /// Откуда брать стратегии и встроенные списки: из загруженной с GitHub копии,
+    /// если она новее встроенной в установщик, иначе из ресурсов приложения.
+    pub fn content_dir(&self) -> PathBuf {
+        let v = |d: &Path| {
+            fs::read_to_string(d.join("presets.json"))
+                .map(|t| crate::content::version_of(&t))
+                .unwrap_or(0)
+        };
+        if v(&self.remote) > v(&self.resources) {
+            self.remote.clone()
+        } else {
+            self.resources.clone()
+        }
+    }
+
+    pub fn content_version(&self) -> u64 {
+        fs::read_to_string(self.presets_file())
+            .map(|t| crate::content::version_of(&t))
+            .unwrap_or(0)
+    }
+
     pub fn presets_file(&self) -> PathBuf {
-        self.resources.join("presets.json")
+        self.content_dir().join("presets.json")
+    }
+
+    /// Обновляет встроенные списки (YouTube, Discord) в рабочем каталоге.
+    pub fn sync_builtin_lists(&self) -> Result<(), String> {
+        let src_dir = self.content_dir().join("lists");
+        for name in BUILTIN_LISTS {
+            let src = src_dir.join(format!("{name}.txt"));
+            if src.exists() {
+                fs::copy(&src, self.lists.join(format!("{name}.txt")))
+                    .map_err(|e| format!("Не удалось скопировать список {name}: {e}"))?;
+            }
+        }
+        Ok(())
     }
 
     pub fn auto_list(&self) -> PathBuf {
@@ -94,14 +131,8 @@ impl Paths {
             copy_dir(&bundled, &self.engine)?;
         }
 
+        self.sync_builtin_lists()?;
         let res_lists = self.resources.join("lists");
-        for name in BUILTIN_LISTS {
-            let src = res_lists.join(format!("{name}.txt"));
-            if src.exists() {
-                fs::copy(&src, self.lists.join(format!("{name}.txt")))
-                    .map_err(|e| format!("Не удалось скопировать список {name}: {e}"))?;
-            }
-        }
         for name in USER_LISTS {
             let dst = self.lists.join(format!("{name}.txt"));
             let src = res_lists.join(format!("{name}.txt"));
@@ -146,14 +177,14 @@ pub fn release_driver() {
 
 /// Количество доменов (непустых строк без комментариев) в списке.
 pub fn count_domains(p: &Path) -> usize {
-    fs::read_to_string(p)
-        .map(|s| {
-            s.lines()
-                .map(str::trim)
-                .filter(|l| !l.is_empty() && !l.starts_with('#'))
-                .count()
-        })
-        .unwrap_or(0)
+    fs::read_to_string(p).map(|s| count_domains_text(&s)).unwrap_or(0)
+}
+
+pub fn count_domains_text(s: &str) -> usize {
+    s.lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .count()
 }
 
 pub fn first_domains(p: &Path, n: usize) -> Vec<String> {

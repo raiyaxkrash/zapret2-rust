@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <title>Zapret2</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="tray.css" />
+</head>
+<body>
+  <div class="fly">
+    <header class="fly-head">
+      <svg class="fly-logo" viewBox="0 0 1024 1024"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c5cff"/><stop offset="1" stop-color="#18c8a8"/></linearGradient></defs><rect x="64" y="64" width="896" height="896" rx="216" fill="url(#lg)"/><path d="M332 330 H692 L382 694 H692" fill="none" stroke="#fff" stroke-width="92" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div class="fly-title">Zapret2</div>
+      <button class="icon-btn" id="openMain" title="Открыть главное окно"><span data-icon="open"></span></button>
+    </header>
+
+    <button class="fly-power" id="power">
+      <span class="fly-power-ico"><span data-icon="power"></span><span class="spinner"></span></span>
+      <span class="fly-power-text">
+        <span class="fly-state" id="state">Обход выключен</span>
+        <span class="fly-sub" id="sub">Нажмите, чтобы включить</span>
+      </span>
+    </button>
+
+    <div class="fly-label">Стратегия</div>
+    <div class="select-wrap">
+      <select id="strategy"></select>
+      <span class="select-chev" data-icon="chevron"></span>
+    </div>
+
+    <div class="fly-label">Что обходить</div>
+    <div class="tiles">
+      <button class="tile" data-key="youtube"><span data-icon="play"></span><span>YouTube</span></button>
+      <button class="tile" data-key="discord"><span data-icon="chat"></span><span>Discord</span></button>
+      <button class="tile" data-key="discord_voice"><span data-icon="mic"></span><span>Голос</span></button>
+      <button class="tile" data-key="custom"><span data-icon="globe"></span><span>Мои сайты</span></button>
+    </div>
+
+    <div class="fly-warn" id="warn" hidden></div>
+
+    <footer class="fly-foot">
+      <button class="foot-btn" id="test"><span data-icon="wand"></span>Подобрать стратегию</button>
+      <span class="foot-spacer"></span>
+      <button class="icon-btn" id="settings" title="Настройки"><span data-icon="gear"></span></button>
+      <button class="icon-btn" id="quit" title="Выйти из Zapret2"><span data-icon="exit"></span></button>
+    </footer>
+  </div>
+  <script src="common.js"></script>
+  <script src="tray.js"></script>
+</body>
+</html>

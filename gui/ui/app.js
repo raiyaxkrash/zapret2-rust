@@ -1,68 +1,6 @@
 "use strict";
+/* Главное окно. Общие функции — в common.js. */
 
-/* ===================================================================== icons */
-const ICONS = {
-  home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"/>',
-  sliders: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
-  list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
-  terminal: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="m7 9 3 3-3 3M13 15h4"/>',
-  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
-  power: '<path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/>',
-  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
-  play: '<rect x="2.5" y="5" width="19" height="14" rx="4"/><path d="m10 9 5 3-5 3z" fill="currentColor"/>',
-  chat: '<path d="M8 17H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3h-5l-5 4z"/><circle cx="9" cy="10.5" r="1" fill="currentColor"/><circle cx="15" cy="10.5" r="1" fill="currentColor"/>',
-  mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
-  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
-  wand: '<path d="m15 4 1 2 2 1-2 1-1 2-1-2-2-1 2-1zM5 19 16 8"/><path d="M19 13l.6 1.4L21 15l-1.4.6L19 17l-.6-1.4L17 15l1.4-.6z"/>',
-  code: '<path d="m8 8-4 4 4 4M16 8l4 4-4 4M14 5l-4 14"/>',
-  copy: '<rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
-  folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
-  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>',
-  box: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
-  refresh: '<path d="M20 11a8 8 0 0 0-14.5-4.5L4 8M4 4v4h4M4 13a8 8 0 0 0 14.5 4.5L20 16M20 20v-4h-4"/>',
-  check: '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
-  alert: '<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17.5v.01"/>',
-  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.01"/>',
-  x: '<path d="M6 6l12 12M18 6 6 18"/>',
-};
-function icon(name) {
-  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ""}</svg>`;
-}
-function hydrateIcons(root = document) {
-  root.querySelectorAll("[data-icon]").forEach((el) => {
-    if (!el.dataset.done) { el.innerHTML = icon(el.dataset.icon); el.dataset.done = "1"; }
-  });
-}
-
-/* ===================================================================== bridge */
-const TAURI = window.__TAURI__;
-const invoke = TAURI ? TAURI.core.invoke : mockInvoke;
-const listen = TAURI ? TAURI.event.listen : () => Promise.resolve();
-
-/* ===================================================================== helpers */
-const $ = (s, r = document) => r.querySelector(s);
-const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const errText = (e) => (typeof e === "string" ? e : e?.message || JSON.stringify(e));
-
-function toast(msg, kind = "ok", ms = 4500) {
-  const el = document.createElement("div");
-  el.className = `toast ${kind}`;
-  el.innerHTML = `<span class="ico">${icon(kind === "err" ? "alert" : kind === "info" ? "info" : "check")}</span><div>${esc(msg)}</div>`;
-  $("#toasts").appendChild(el);
-  setTimeout(() => { el.classList.add("hide"); setTimeout(() => el.remove(), 300); }, ms);
-}
-
-function fmtUptime(sec) {
-  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
-  return h ? `${h} ч ${m} мин` : m ? `${m} мин ${s} с` : `${s} с`;
-}
-function plural(n, one, few, many) {
-  const a = n % 10, b = n % 100;
-  return a === 1 && b !== 11 ? one : a >= 2 && a <= 4 && (b < 10 || b >= 20) ? few : many;
-}
-
-/* ===================================================================== state */
 let state = null;
 let strategies = [];
 let report = null;
@@ -73,6 +11,7 @@ async function refresh() {
   try {
     state = await invoke("get_state");
     testing = state.testing;
+    applyAppearance(state.settings.theme, state.platform);
     render();
   } catch (e) {
     console.error(e);
@@ -85,16 +24,35 @@ async function loadStrategies() {
   renderStrategies();
 }
 
+/* ===================================================================== window controls */
+if (appWindow) {
+  $("#winMin").addEventListener("click", () => appWindow.minimize());
+  $("#winMax").addEventListener("click", () => appWindow.toggleMaximize());
+  $("#winClose").addEventListener("click", () => appWindow.close());
+  const syncMax = async () => {
+    const max = await appWindow.isMaximized();
+    $("#winMax span").innerHTML = iconSvg(max ? "restore" : "max");
+    $("#winMax").title = max ? "Восстановить" : "Развернуть";
+  };
+  appWindow.onResized(syncMax);
+  appWindow.onFocusChanged(({ payload }) => $(".titlebar").classList.toggle("inactive", !payload));
+  syncMax();
+} else {
+  $(".caption").hidden = true;
+}
+
 /* ===================================================================== navigation */
 function goto(page) {
   $$(".nav-item").forEach((b) => b.classList.toggle("active", b.dataset.page === page));
   $$(".page").forEach((p) => p.classList.toggle("active", p.id === `page-${page}`));
+  $(".content").scrollTop = 0;
   if (page === "strategies") loadCommandLine();
   if (page === "lists") loadList(currentList);
   if (page === "logs") scrollLog();
 }
 $$(".nav-item").forEach((b) => b.addEventListener("click", () => goto(b.dataset.page)));
 $$("[data-goto]").forEach((b) => b.addEventListener("click", () => goto(b.dataset.goto)));
+listen("navigate", ({ payload }) => goto(payload));
 
 /* ===================================================================== render */
 function render() {
@@ -102,47 +60,58 @@ function render() {
   const st = state.status;
   const running = st.running;
   const s = state.settings;
+  const strat = strategies.find((x) => x.id === s.strategy);
 
-  // sidebar
-  const pill = $("#sidePill");
-  pill.classList.toggle("on", running && !busy);
-  pill.classList.toggle("busy", busy || testing);
-  $("#sidePillText").textContent = testing ? "Подбор…" : busy ? "Подождите…" : running ? "Обход включён" : "Выключен";
-  $("#versions").innerHTML = `Приложение ${esc(state.app_version)}<br>zapret2 ${esc(state.engine_version || "—")}`;
+  // статус в навигации
+  const ns = $("#navStatus");
+  ns.classList.toggle("on", running && !busy);
+  ns.classList.toggle("busy", busy || testing);
+  $("#navStatusTitle").textContent = testing ? "Подбор стратегии…" : busy ? "Подождите…" : running ? "Обход включён" : "Обход выключен";
+  $("#navStatusSub").textContent = `zapret2 ${state.engine_version || "—"} · v${state.app_version}`;
 
-  // hero
+  // главный блок
   const power = $("#powerBtn");
   power.classList.toggle("on", running && !busy);
   power.classList.toggle("busy", busy || testing);
   $(".hero").classList.toggle("on", running && !busy);
   $("#heroState").textContent = testing ? "Идёт подбор стратегии" : busy ? (running ? "Перезапуск…" : "Запуск…") : running ? "Обход включён" : "Обход выключен";
   $("#heroSub").textContent = testing
-    ? "Дождитесь окончания проверки на вкладке «Стратегии»"
+    ? "Дождитесь окончания проверки на странице «Стратегии»"
     : running ? "Заблокированные сервисы должны открываться" : "Нажмите кнопку, чтобы включить";
-  const strat = strategies.find((x) => x.id === s.strategy);
   $("#heroStrategyName").textContent = strat ? strat.name : s.strategy;
+  const ytStrat = s.youtube_strategy ? strategies.find((x) => x.id === s.youtube_strategy) : null;
+  $("#heroYt").hidden = !ytStrat || !s.youtube;
+  $("#heroYtName").textContent = ytStrat ? `YouTube: ${ytStrat.name}` : "";
   updateUptime();
 
-  // banners
+  const ytSel = $("#ytStrategy");
+  const ytOpts = `<option value="">Как основная</option>` + strategies.map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("");
+  if (ytSel.dataset.opts !== ytOpts) { ytSel.innerHTML = ytOpts; ytSel.dataset.opts = ytOpts; }
+  ytSel.value = s.youtube_strategy || "";
+
+  // уведомления
   const banners = [];
   if (state.conflicts.length) {
     const names = [...new Set(state.conflicts.map((c) => c.name))].join(", ");
-    banners.push(`<div class="banner warn"><span class="ico">${icon("alert")}</span><div>Запущены другие программы обхода (${esc(names)}). Они конфликтуют с Zapret2.</div><button class="btn small" id="killConflicts">Завершить</button></div>`);
+    banners.push(`<div class="infobar warn">${icon("alert")}<div>Запущены другие программы обхода (${esc(names)}). Они конфликтуют с Zapret2.</div><button class="btn" id="killConflicts">Завершить</button></div>`);
   }
   if (st.last_error && !running) {
-    banners.push(`<div class="banner error"><span class="ico">${icon("alert")}</span><div>${esc(st.last_error)}</div><button class="btn small ghost" data-goto="logs">Журнал</button></div>`);
+    banners.push(`<div class="infobar error">${icon("alert")}<div>${esc(st.last_error)}</div><button class="btn" data-goto="logs">Журнал</button></div>`);
   }
   $("#banners").innerHTML = banners.join("");
   $("#killConflicts")?.addEventListener("click", killConflicts);
   $$("#banners [data-goto]").forEach((b) => b.addEventListener("click", () => goto(b.dataset.goto)));
 
-  // settings bindings
+  // переключатели
   $$("input[data-setting]").forEach((inp) => {
     const k = inp.dataset.setting;
     inp.checked = k === "autostart" ? !!state.autostart : !!s[k];
+    const lbl = inp.closest(".setting-control")?.querySelector(".state-label");
+    if (lbl) lbl.textContent = inp.checked ? "Вкл." : "Откл.";
   });
-  $$(".service").forEach((el) => el.classList.toggle("checked", !!s[el.dataset.key]));
+  $$(".services .setting").forEach((el) => el.classList.toggle("checked", !!s[el.dataset.key]));
   $$("#customMode button").forEach((b) => b.classList.toggle("active", b.dataset.mode === s.custom_mode));
+  $$("#themeSel button").forEach((b) => b.classList.toggle("active", b.dataset.theme === (s.theme || "system")));
   $("#customModeCard").hidden = !s.custom;
   const ud = state.user_domains, ad = state.auto_domains;
   $("#customDesc").textContent =
@@ -150,14 +119,12 @@ function render() {
     : s.custom_mode === "auto" ? `${ud} ${plural(ud, "сайт", "сайта", "сайтов")} + ${ad} найдено автоматически`
     : ud ? `${ud} ${plural(ud, "сайт", "сайта", "сайтов")} в списке` : "Список пуст — добавьте сайты";
 
-  // settings page
+  // настройки
   $("#engVer").textContent = state.engine_version || "—";
   $("#appVer").textContent = state.app_version;
+  $("#contentVer").textContent = state.content_version || "—";
   $("#dataDir").textContent = state.data_dir;
   if (document.activeElement !== $("#updateUrl")) $("#updateUrl").value = s.app_update_url || "";
-  if (!s.app_update_url) {
-    $("#appStatus").textContent = "Источник обновлений не настроен. Укажите адрес latest.json из ваших релизов на GitHub.";
-  }
 
   $("#testBtn").disabled = testing;
   $("#cancelTestBtn").hidden = !testing;
@@ -190,10 +157,13 @@ async function togglePower() {
 }
 $("#powerBtn").addEventListener("click", togglePower);
 
+const ENGINE_KEYS = ["strategy", "youtube_strategy","youtube", "discord", "discord_voice", "custom", "custom_mode", "quic", "debug_log", "custom_tls", "custom_http", "custom_quic"];
+
 async function saveSettings(patch, { quiet = false } = {}) {
   const next = { ...state.settings, ...patch };
-  const willRestart = state.status.running && ["strategy", "youtube", "discord", "discord_voice", "custom", "custom_mode", "quic", "debug_log", "custom_tls", "custom_http", "custom_quic"].some((k) => k in patch);
+  const willRestart = state.status.running && ENGINE_KEYS.some((k) => k in patch);
   if (willRestart) { busy = true; render(); }
+  if ("theme" in patch) applyAppearance(patch.theme);
   try {
     state.settings = await invoke("save_settings", { new: next });
     if (!quiet && willRestart) toast("Настройки применены, обход перезапущен");
@@ -209,6 +179,8 @@ $$("input[data-setting]").forEach((inp) =>
   inp.addEventListener("change", () => saveSettings({ [inp.dataset.setting]: inp.checked }))
 );
 $$("#customMode button").forEach((b) => b.addEventListener("click", () => saveSettings({ custom_mode: b.dataset.mode })));
+$$("#themeSel button").forEach((b) => b.addEventListener("click", () => saveSettings({ theme: b.dataset.theme })));
+$("#ytStrategy").addEventListener("change", (e) => saveSettings({ youtube_strategy: e.target.value }).then(loadCommandLine));
 
 async function killConflicts() {
   try {
@@ -222,35 +194,43 @@ async function killConflicts() {
 function resultFor(id) {
   return report?.results?.find((r) => r.id === id);
 }
-function badgeFor(r) {
+function scoreBadge(label, ok, total, ms) {
+  const cls = ok === total ? "good" : ok > 0 ? "mid" : "bad";
+  return `<span class="badge ${cls}">${label}${ok}/${total}${ms && ok ? ` · ${ms} мс` : ""}</span>`;
+}
+function badgeFor(r, { split = true } = {}) {
   if (!r) return "";
   if (r.error) return `<span class="badge bad">ошибка</span>`;
-  const cls = r.ok === r.total ? "good" : r.ok > 0 ? "mid" : "bad";
-  return `<span class="badge ${cls}">${r.ok}/${r.total}${r.ok ? ` · ${r.avg_ms} мс` : ""}</span>`;
+  if (split && r.yt_total && r.other_total) {
+    return scoreBadge("YouTube ", r.yt_ok, r.yt_total) + " " + scoreBadge("Остальные ", r.other_ok, r.other_total);
+  }
+  return scoreBadge("", r.ok, r.total, r.avg_ms);
 }
 
 function renderStrategies() {
   const list = $("#strategyList");
   list.innerHTML = strategies.map((st) => {
     const r = resultFor(st.id);
-    const best = report?.best === st.id ? `<span class="badge best">лучшая</span>` : "";
+    const best = (report?.best === st.id ? `<span class="badge best">лучшая</span>` : "")
+      + (report?.best_youtube === st.id ? ` <span class="badge best">лучшая для YouTube</span>` : "")
+      + (state?.settings.youtube_strategy === st.id ? ` <span class="badge">выбрана для YouTube</span>` : "");
     const args = [...st.tls, ...st.http, ...(st.quic || [])].join(" ");
-    const custom = st.id === "custom" ? `
+    const extra = st.id === "custom" ? `
       <div class="custom-fields" data-stop>
         <div><label>TLS (HTTPS)</label><textarea data-custom="custom_tls">${esc(state?.settings.custom_tls)}</textarea></div>
         <div><label>HTTP</label><textarea data-custom="custom_http">${esc(state?.settings.custom_http)}</textarea></div>
         <div><label>QUIC (пусто — как в остальных стратегиях)</label><textarea data-custom="custom_quic">${esc(state?.settings.custom_quic)}</textarea></div>
-        <div><button class="btn small primary" data-save-custom>Сохранить параметры</button></div>
-      </div>` : "";
+        <div><button class="btn primary" data-save-custom>Сохранить параметры</button></div>
+      </div>`
+      : `<button class="link-btn" data-stop data-toggle-args>Показать параметры</button><div class="strategy-args"><pre class="code">${esc(args)}</pre></div>`;
     return `
       <div class="card strategy" data-id="${esc(st.id)}">
         <span class="radio"></span>
         <div>
           <div class="strategy-name">${esc(st.name)} ${best} ${badgeFor(r)}</div>
           <div class="strategy-desc">${esc(st.description)}</div>
-          ${st.id === "custom" ? custom : `<button class="strategy-toggle" data-stop>Показать параметры</button><div class="strategy-args"><pre class="code">${esc(args)}</pre></div>`}
+          ${extra}
         </div>
-        <div></div>
       </div>`;
   }).join("");
 
@@ -260,7 +240,7 @@ function renderStrategies() {
       if (state.settings.strategy !== el.dataset.id) saveSettings({ strategy: el.dataset.id }).then(loadCommandLine);
     });
   });
-  $$(".strategy-toggle", list).forEach((b) => b.addEventListener("click", () => {
+  $$("[data-toggle-args]", list).forEach((b) => b.addEventListener("click", () => {
     const card = b.closest(".strategy");
     card.classList.toggle("open");
     b.textContent = card.classList.contains("open") ? "Скрыть параметры" : "Показать параметры";
@@ -274,6 +254,7 @@ function renderStrategies() {
     loadCommandLine();
   });
   renderStrategySelection();
+  if (state) render();
 }
 
 function renderStrategySelection() {
@@ -287,7 +268,7 @@ async function loadCommandLine() {
 }
 $("#copyCmd").addEventListener("click", () => navigator.clipboard.writeText($("#cmdLine").textContent).then(() => toast("Скопировано")));
 
-/* ---------- auto test */
+/* ---------- автоподбор */
 let testRows = [];
 function renderTestRows(runningIndex = -1) {
   $("#testRows").innerHTML = testRows.map((row, i) => {
@@ -295,7 +276,7 @@ function renderTestRows(runningIndex = -1) {
     const running = i === runningIndex && !r;
     const err = r?.error ? `<span class="err">${esc(r.error.split("\n")[0])}</span>` : "";
     return `<div class="test-row ${running ? "running" : ""}">
-      <div>${esc(row.name)} ${err}</div>
+      <div>${esc(row.name)}${err}</div>
       <div>${running ? `<span class="badge">проверка…</span>` : r ? badgeFor(r) : `<span class="badge">ожидание</span>`}</div>
       <div class="ms">${r && r.ok ? r.avg_ms + " мс" : ""}</div>
     </div>`;
@@ -334,33 +315,50 @@ function finishTest() {
   renderTestRows(-1);
   const base = report.baseline;
   const best = report.results.find((r) => r.id === report.best);
+  const bestYt = report.results.find((r) => r.id === report.best_youtube);
   $("#testTitle").textContent = report.cancelled ? "Подбор остановлен" : "Подбор завершён";
-  let msg;
+
+  const lines = [];
   if (base && base.total && base.ok === base.total) {
-    msg = "Все адреса открываются и без обхода: похоже, блокировки сейчас нет.";
-  } else if (best) {
-    msg = `Лучший результат: «${best.name}» — ${best.ok} из ${best.total}, в среднем ${best.avg_ms} мс.`;
+    lines.push("Все адреса открываются и без обхода: похоже, блокировки сейчас нет.");
   } else {
-    msg = "Ни одна стратегия не помогла. Попробуйте отключить QUIC, проверить антивирус или задать свои параметры.";
+    if (best) {
+      const [ok, total] = base.yt_total && base.other_total ? [best.other_ok, best.other_total] : [best.ok, best.total];
+      lines.push(`${bestYt ? "Discord и остальные" : "Лучшая"}: «${best.name}» — ${ok} из ${total}.`);
+    }
+    if (bestYt) lines.push(`YouTube: «${bestYt.name}» — ${bestYt.yt_ok} из ${bestYt.yt_total}.`);
+    else if (base.yt_total) lines.push("Для YouTube ни одна стратегия не сработала. Попробуйте выключить QUIC и повторить подбор.");
+    if (!best && !bestYt) lines.push("Ни одна стратегия не помогла. Попробуйте выключить QUIC, проверить антивирус или задать свои параметры.");
+  }
+
+  // Что применить: основную и отдельную для YouTube (если отличается).
+  const patch = {};
+  if (best && best.id !== state.settings.strategy) patch.strategy = best.id;
+  if (bestYt) {
+    const main = patch.strategy || state.settings.strategy;
+    const yt = bestYt.id === main ? "" : bestYt.id;
+    if (yt !== (state.settings.youtube_strategy || "")) patch.youtube_strategy = yt;
   }
   const foot = $("#testFoot");
   foot.hidden = false;
-  foot.innerHTML = `<div>${esc(msg)}</div>${best && best.id !== state.settings.strategy ? `<button class="btn primary" id="applyBest">Применить</button>` : ""}`;
+  foot.innerHTML = `<div>${lines.map(esc).join("<br>")}</div>${Object.keys(patch).length ? `<button class="btn primary" id="applyBest">Применить</button>` : ""}`;
   $("#applyBest")?.addEventListener("click", async () => {
-    await saveSettings({ strategy: best.id }, { quiet: true });
-    toast(`Выбрана стратегия «${best.name}»`);
+    await saveSettings(patch, { quiet: true });
+    toast("Стратегии применены");
     $("#applyBest")?.remove();
+    renderStrategies();
     loadCommandLine();
   });
 }
 
 $("#testBtn").addEventListener("click", runTest);
 $("#cancelTestBtn").addEventListener("click", () => invoke("cancel_strategy_test"));
+listen("start-test", () => { goto("strategies"); runTest(); });
 
 listen("test-progress", ({ payload: p }) => {
   if (!testRows.length) return;
   if (p.result) {
-    const row = testRows.find((r) => r.id === p.result.id) || (p.result.id === "baseline" ? testRows[0] : null);
+    const row = testRows.find((r) => r.id === p.result.id);
     if (row) row.result = p.result;
   }
   $("#testCount").textContent = `${Math.min(p.index, p.total)} / ${p.total}`;
@@ -372,9 +370,9 @@ listen("test-progress", ({ payload: p }) => {
 const LIST_INFO = {
   user: { hint: "Сайты, к которым применяется обход, когда включён сервис «Мои сайты».", editable: true },
   exclude: { hint: "К этим сайтам обход не применяется никогда. Особенно важно в режиме «Все сайты».", editable: true },
-  auto: { hint: "Сайты, которые нашлись автоматически в режиме «Список + авто»: после нескольких неудачных подключений домен добавляется сюда.", editable: true, clear: true },
-  youtube: { hint: "Встроенный список, обновляется вместе с приложением. Свои сайты добавляйте в «Мои сайты».", editable: false },
-  discord: { hint: "Встроенный список, обновляется вместе с приложением. Свои сайты добавляйте в «Мои сайты».", editable: false },
+  auto: { hint: "Сайты, найденные автоматически в режиме «Список + авто»: после нескольких неудачных подключений домен добавляется сюда.", editable: true, clear: true },
+  youtube: { hint: "Встроенный список, обновляется автоматически с GitHub. Свои сайты добавляйте в «Мои сайты».", editable: false },
+  discord: { hint: "Встроенный список, обновляется автоматически с GitHub. Свои сайты добавляйте в «Мои сайты».", editable: false },
 };
 let currentList = "user";
 let listDirty = false;
@@ -388,7 +386,7 @@ function updateListCount() {
 }
 
 async function loadList(name) {
-  if (listDirty && !confirm("Есть несохранённые изменения. Отбросить их?")) return;
+  if (listDirty && name !== currentList && !confirm("Есть несохранённые изменения. Отбросить их?")) return;
   currentList = name;
   listDirty = false;
   $$("#listTabs .tab").forEach((t) => t.classList.toggle("active", t.dataset.list === name));
@@ -449,13 +447,32 @@ function setStatus(el, text, cls = "") {
   el.className = `update-status ${cls}`;
 }
 
+$("#contentCheck").addEventListener("click", async () => {
+  const st = $("#contentStatus");
+  const btn = $("#contentCheck");
+  btn.disabled = true;
+  setStatus(st, "Проверяем…");
+  try {
+    const msg = await invoke("update_content");
+    setStatus(st, msg, "good");
+    await loadStrategies();
+    refresh();
+  } catch (e) { setStatus(st, errText(e), "bad"); }
+  finally { btn.disabled = false; }
+});
+listen("content-updated", ({ payload }) => {
+  toast(`Стратегии и списки обновлены (версия ${payload})`);
+  loadStrategies();
+  refresh();
+});
+
 $("#engCheck").addEventListener("click", async () => {
   const st = $("#engStatus");
   setStatus(st, "Проверяем…");
   try {
     const info = await invoke("check_engine_update");
     if (info.available) {
-      setStatus(st, `Доступна версия ${info.latest} (опубликована ${new Date(info.published_at).toLocaleDateString("ru-RU")})`, "good");
+      setStatus(st, `Доступна версия ${info.latest} от ${new Date(info.published_at).toLocaleDateString("ru-RU")}`, "good");
       $("#engInstall").hidden = false;
     } else {
       setStatus(st, `Установлена последняя версия (${info.latest})`);
@@ -513,7 +530,14 @@ $$("[data-url]").forEach((a) => a.addEventListener("click", (e) => { e.preventDe
 
 /* ===================================================================== events */
 listen("engine-state", () => { if (!busy) refresh(); });
-listen("settings-changed", ({ payload }) => { if (state) { state.settings = payload; render(); } });
+listen("settings-changed", ({ payload }) => {
+  if (!state) return;
+  const strategyChanged = state.settings.strategy !== payload.strategy;
+  state.settings = payload;
+  applyAppearance(payload.theme);
+  render();
+  if (strategyChanged) loadCommandLine();
+});
 listen("toast", ({ payload }) => toast(payload, "err", 9000));
 
 // Конфликтующие процессы и состояние автозапуска могут поменяться извне.
@@ -524,46 +548,6 @@ setInterval(() => { if (!document.hidden && !busy) refresh(); }, 5000);
   hydrateIcons();
   await refresh();
   await loadStrategies();
-  render();
   try { (await invoke("get_logs")).forEach((l) => logLine(l, false)); } catch {}
   if (state?.testing) { testing = true; render(); }
 })();
-
-/* ===================================================================== browser mock (только для предпросмотра без Tauri) */
-function mockInvoke(cmd, args) {
-  const m = (window.__mock ||= {
-    running: false, since: null,
-    settings: { strategy: "fake_multisplit_md5", youtube: true, discord: true, discord_voice: true, custom: false, custom_mode: "list", quic: true, autostart: false, start_minimized: true, engine_on_launch: true, close_to_tray: true, debug_log: false, engine_auto_update: true, app_auto_check: true, app_update_url: "", custom_tls: "--payload=tls_client_hello --lua-desync=multisplit:pos=1", custom_http: "", custom_quic: "" },
-    lists: { user: "# Мои сайты\nrutracker.org\n", exclude: "gosuslugi.ru\n", auto: "", youtube: "youtube.com\ngooglevideo.com\n", discord: "discord.com\n" },
-  });
-  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-  const strategies = [
-    { id: "fake_multisplit_md5", name: "Фейк + разрезание (MD5)", description: "Универсальный вариант.", tls: ["--payload=tls_client_hello", "--lua-desync=fake:blob=tls_google:tcp_md5:repeats=6"], http: [], quic: null },
-    { id: "seqovl", name: "Наложение последовательности (seqovl)", description: "Мягкий и быстрый способ.", tls: ["--lua-desync=multisplit:pos=1:seqovl=681"], http: [], quic: null },
-    { id: "custom", name: "Свои параметры", description: "Параметры, заданные вручную.", tls: [], http: [], quic: null },
-  ];
-  switch (cmd) {
-    case "get_state": return Promise.resolve({
-      status: { running: m.running, since: m.since, last_error: null, command_line: "", pid: null },
-      settings: m.settings, engine_version: "1.0.7", app_version: "1.0.0", conflicts: [], testing: false,
-      data_dir: "C:\\Users\\user\\AppData\\Local\\Zapret2GUI", user_domains: 1, auto_domains: 0, autostart: m.settings.autostart,
-    });
-    case "start_engine": return wait(900).then(() => { m.running = true; m.since = Math.floor(Date.now() / 1000); });
-    case "stop_engine": return wait(200).then(() => { m.running = false; });
-    case "get_strategies": return Promise.resolve(strategies);
-    case "save_settings": m.settings = args.new; return Promise.resolve(m.settings);
-    case "get_command_line": return Promise.resolve("engine\\bin\\winws2.exe --wf-tcp-out=80,443 ...");
-    case "read_list": return Promise.resolve(m.lists[args.name] || "");
-    case "write_list": m.lists[args.name] = args.content; return Promise.resolve();
-    case "get_logs": return Promise.resolve(["[app] Предпросмотр интерфейса без Tauri"]);
-    case "run_strategy_test": return wait(1500).then(() => ({
-      baseline: { id: "baseline", name: "Без обхода", ok: 1, total: 6, avg_ms: 300, checks: [] },
-      results: [{ id: "fake_multisplit_md5", name: "Фейк + разрезание (MD5)", ok: 6, total: 6, avg_ms: 420, checks: [] }, { id: "seqovl", name: "seqovl", ok: 3, total: 6, avg_ms: 380, checks: [] }],
-      best: "fake_multisplit_md5", cancelled: false,
-    }));
-    case "check_engine_update": return wait(500).then(() => ({ current: "1.0.7", latest: "1.0.7", available: false, published_at: "2026-11-05T08:01:55Z" }));
-    case "check_app_update": return Promise.resolve({ configured: false, available: false });
-    case "get_last_report": return Promise.resolve(null);
-    default: return Promise.resolve(null);
-  }
-}

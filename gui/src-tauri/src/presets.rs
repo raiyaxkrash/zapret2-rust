@@ -65,43 +65,46 @@ const DISCORD_TCP: &str = "443,2053,2083,2087,2096,8443";
 const DISCORD_VOICE_UDP: &str = "19294-19344,50000-50100";
 
 /// Собирает аргументы winws2. Все пути относительные: рабочий каталог — `paths.root`.
-pub fn build_args(settings: &Settings, presets: &Presets, strategy: &Strategy, paths: &Paths) -> Result<Vec<String>, String> {
-    let quic_args = strategy.quic.clone().unwrap_or_else(|| presets.quic_default.clone());
+/// `yt` — стратегия для YouTube (может совпадать с основной `strategy`).
+pub fn build_args(settings: &Settings, presets: &Presets, strategy: &Strategy, yt: &Strategy, paths: &Paths) -> Result<Vec<String>, String> {
     let mut tcp_ports: Vec<&str> = Vec::new();
     let mut need_quic = false;
     let mut profiles: Vec<Vec<String>> = Vec::new();
 
-    let tcp_profile = |ports: &str, filters: &[String]| -> Vec<String> {
+    let tcp_profile = |s: &Strategy, ports: &str, filters: &[String]| -> Vec<String> {
         let mut p = vec![format!("--filter-tcp={ports}"), "--filter-l7=tls,http".to_string()];
         p.extend_from_slice(filters);
-        p.extend(strategy.tls.iter().cloned());
-        p.extend(strategy.http.iter().cloned());
+        p.extend(s.tls.iter().cloned());
+        p.extend(s.http.iter().cloned());
         p
     };
-    let quic_profile = |filters: &[String]| -> Vec<String> {
+    let quic_profile = |s: &Strategy, filters: &[String]| -> Vec<String> {
         let mut p = vec!["--filter-udp=443".to_string(), "--filter-l7=quic".to_string()];
         p.extend_from_slice(filters);
-        p.extend(quic_args.iter().cloned());
+        p.extend(s.quic.clone().unwrap_or_else(|| presets.quic_default.clone()));
+        p
+    };
+    // QUIC выключен: блокируем его, чтобы браузер сразу перешёл на TCP, где работает обход.
+    let quic_block = |filters: &[String]| -> Vec<String> {
+        let mut p = vec!["--filter-udp=443".to_string(), "--filter-l7=quic".to_string()];
+        p.extend_from_slice(filters);
+        p.push("--payload=quic_initial".to_string());
+        p.push("--lua-desync=drop".to_string());
         p
     };
 
-    if settings.youtube {
-        let f = vec!["--hostlist=lists/youtube.txt".to_string()];
-        tcp_ports.push(YT_TCP);
-        profiles.push(tcp_profile(YT_TCP, &f));
-        if settings.quic {
-            need_quic = true;
-            profiles.push(quic_profile(&f));
+    for (enabled, list, ports, s) in [
+        (settings.youtube, "youtube", YT_TCP, yt),
+        (settings.discord, "discord", DISCORD_TCP, strategy),
+    ] {
+        if !enabled {
+            continue;
         }
-    }
-    if settings.discord {
-        let f = vec!["--hostlist=lists/discord.txt".to_string()];
-        tcp_ports.push(DISCORD_TCP);
-        profiles.push(tcp_profile(DISCORD_TCP, &f));
-        if settings.quic {
-            need_quic = true;
-            profiles.push(quic_profile(&f));
-        }
+        let f = vec![format!("--hostlist=lists/{list}.txt")];
+        tcp_ports.push(ports);
+        profiles.push(tcp_profile(s, ports, &f));
+        need_quic = true;
+        profiles.push(if settings.quic { quic_profile(s, &f) } else { quic_block(&f) });
     }
     if settings.discord_voice {
         let mut p = vec![
@@ -119,15 +122,16 @@ pub fn build_args(settings: &Settings, presets: &Presets, strategy: &Strategy, p
         match settings.custom_mode.as_str() {
             "all" => {
                 tcp_ports.push(YT_TCP);
-                profiles.push(tcp_profile(YT_TCP, &[exclude.clone()]));
+                profiles.push(tcp_profile(strategy, YT_TCP, &[exclude.clone()]));
                 if settings.quic {
                     need_quic = true;
-                    profiles.push(quic_profile(&[exclude]));
+                    profiles.push(quic_profile(strategy, &[exclude]));
                 }
             }
             "auto" => {
                 tcp_ports.push(YT_TCP);
                 profiles.push(tcp_profile(
+                    strategy,
                     YT_TCP,
                     &[
                         "--hostlist=lists/user.txt".to_string(),
@@ -138,7 +142,7 @@ pub fn build_args(settings: &Settings, presets: &Presets, strategy: &Strategy, p
                 // Для QUIC автосписок только читается (писать его может лишь один профиль).
                 if settings.quic && (user_count > 0 || count_domains(&auto) > 0) {
                     need_quic = true;
-                    profiles.push(quic_profile(&[
+                    profiles.push(quic_profile(strategy, &[
                         "--hostlist=lists/user.txt".to_string(),
                         format!("--hostlist={auto_arg}"),
                         exclude,
@@ -150,10 +154,10 @@ pub fn build_args(settings: &Settings, presets: &Presets, strategy: &Strategy, p
                 if user_count > 0 {
                     let f = vec!["--hostlist=lists/user.txt".to_string(), exclude];
                     tcp_ports.push(YT_TCP);
-                    profiles.push(tcp_profile(YT_TCP, &f));
+                    profiles.push(tcp_profile(strategy, YT_TCP, &f));
                     if settings.quic {
                         need_quic = true;
-                        profiles.push(quic_profile(&f));
+                        profiles.push(quic_profile(strategy, &f));
                     }
                 }
             }

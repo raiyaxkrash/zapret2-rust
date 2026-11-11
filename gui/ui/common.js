@@ -1,0 +1,145 @@
+"use strict";
+/* Общий код главного окна и мини-окна в трее. */
+
+/* ===================================================================== icons (\u0441\u043E\u0431\u0441\u0442\u0432\u0435\u043D\u043D\u044B\u0439 \u043D\u0430\u0431\u043E\u0440, \u043B\u0438\u043D\u0438\u0438 24\u00D724) */
+const ICONS = {
+  home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"/>',
+  sliders: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
+  list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
+  terminal: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="m7 9 3 3-3 3M13 15h4"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  power: '<path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  play: '<rect x="2.5" y="5" width="19" height="14" rx="4.5"/><path d="m10 9 5 3-5 3z" fill="currentColor"/>',
+  chat: '<path d="M8 17H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3h-5l-5 4z"/><circle cx="9" cy="10.5" r="1" fill="currentColor"/><circle cx="15" cy="10.5" r="1" fill="currentColor"/>',
+  mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+  wand: '<path d="m15 4 1 2 2 1-2 1-1 2-1-2-2-1 2-1zM5 19 16 8"/><path d="M19 13l.6 1.4L21 15l-1.4.6L19 17l-.6-1.4L17 15l1.4-.6z"/>',
+  code: '<path d="m8 8-4 4 4 4M16 8l4 4-4 4M14 5l-4 14"/>',
+  copy: '<rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
+  folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>',
+  box: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
+  refresh: '<path d="M20 11a8 8 0 0 0-14.5-4.5L4 8M4 4v4h4M4 13a8 8 0 0 0 14.5 4.5L20 16M20 20v-4h-4"/>',
+  sync: '<path d="M20 11a8 8 0 0 0-14.5-4.5L4 8M4 4v4h4M4 13a8 8 0 0 0 14.5 4.5L20 16M20 20v-4h-4"/>',
+  check: '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
+  alert: '<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17.5v.01"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.01"/>',
+  x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  min: '<path d="M6 12h12"/>',
+  max: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
+  restore: '<rect x="5" y="8" width="11" height="11" rx="2"/><path d="M8 8V6a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-2"/>',
+  close: '<path d="M7 7l10 10M17 7 7 17"/>',
+  open: '<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/>',
+  color: '<path d="M12 3a9 9 0 1 0 0 18c1.2 0 2-.8 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2H17a4 4 0 0 0 4-4c0-4.4-4-7.4-9-7.4z"/><circle cx="7.5" cy="11" r="1.2" fill="currentColor"/><circle cx="10" cy="7" r="1.2" fill="currentColor"/><circle cx="15" cy="7.5" r="1.2" fill="currentColor"/>',
+  download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
+  rocket: '<path d="M5 15c-1.5 1.5-2 5-2 5s3.5-.5 5-2"/><path d="M9 15 6 12l3-5c3-4 8-5 12-4 1 4 0 9-4 12l-5 3z"/><circle cx="15" cy="9" r="1.6"/>',
+  flash: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
+  chevron: '<path d="m9 6 6 6-6 6"/>',
+  exit: '<path d="M7 7l10 10M17 7 7 17"/>',
+};
+function iconSvg(name) {
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ""}</svg>`;
+}
+function icon(name) {
+  return `<span class="ico" aria-hidden="true">${iconSvg(name)}</span>`;
+}
+function hydrateIcons(root = document) {
+  root.querySelectorAll("[data-icon]").forEach((el) => {
+    if (!el.dataset.done) {
+      el.classList.add("ico");
+      el.innerHTML = iconSvg(el.dataset.icon);
+      el.dataset.done = "1";
+    }
+  });
+}
+
+/* ===================================================================== bridge */
+const TAURI = window.__TAURI__;
+const invoke = TAURI ? TAURI.core.invoke : (...a) => mockInvoke(...a);
+const listen = TAURI ? TAURI.event.listen : () => Promise.resolve();
+const appWindow = TAURI?.window?.getCurrentWindow ? TAURI.window.getCurrentWindow() : null;
+
+/* ===================================================================== helpers */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const errText = (e) => (typeof e === "string" ? e : e?.message || JSON.stringify(e));
+
+function plural(n, one, few, many) {
+  const a = n % 10, b = n % 100;
+  return a === 1 && b !== 11 ? one : a >= 2 && a <= 4 && (b < 10 || b >= 20) ? few : many;
+}
+function fmtUptime(sec) {
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  return h ? `${h} ч ${m} мин` : m ? `${m} мин ${s} с` : `${s} с`;
+}
+
+/* ===================================================================== appearance */
+const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+let appearance = { theme: "system", platform: null };
+
+/** Тема: "system" | "light" | "dark". */
+function applyAppearance(theme, platform) {
+  if (theme) appearance.theme = theme;
+  if (platform) appearance.platform = platform;
+  const dark = appearance.theme === "dark" || (appearance.theme === "system" && darkQuery.matches);
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+}
+darkQuery.addEventListener("change", () => applyAppearance());
+
+/* ===================================================================== toasts */
+function toast(msg, kind = "ok", ms = 4500) {
+  const box = $("#toasts");
+  if (!box) return;
+  const el = document.createElement("div");
+  el.className = `toast ${kind}`;
+  el.innerHTML = `${icon(kind === "err" ? "alert" : kind === "info" ? "info" : "check")}<div>${esc(msg)}</div>`;
+  box.appendChild(el);
+  setTimeout(() => { el.classList.add("hide"); setTimeout(() => el.remove(), 300); }, ms);
+}
+
+/* ===================================================================== browser mock (только для предпросмотра без Tauri) */
+function mockInvoke(cmd, args) {
+  const m = (window.__mock ||= {
+    running: false, since: null,
+    settings: { strategy: "fake_multisplit_md5", youtube_strategy: "", youtube: true, discord: true, discord_voice: true, custom: false, custom_mode: "list", quic: true, autostart: false, start_minimized: true, engine_on_launch: true, close_to_tray: true, debug_log: false, engine_auto_update: true, content_auto_update: true, app_auto_check: true, app_update_url: "https://github.com/raiyaxkrash/zapret2-rust/releases/latest/download/latest.json", theme: new URLSearchParams(location.search).get("theme") || "system", custom_tls: "--payload=tls_client_hello --lua-desync=multisplit:pos=1", custom_http: "", custom_quic: "" },
+    lists: { user: "# Мои сайты\nrutracker.org\n", exclude: "gosuslugi.ru\n", auto: "", youtube: "youtube.com\ngooglevideo.com\n", discord: "discord.com\n" },
+  });
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const strategies = [
+    { id: "fake_multisplit_md5", name: "Фейк + разрезание (MD5)", description: "Универсальный вариант: фейковый ClientHello с подписью TCP MD5, затем запрос режется на части.", tls: ["--payload=tls_client_hello", "--lua-desync=fake:blob=tls_google:tcp_md5:repeats=6"], http: [], quic: null },
+    { id: "seqovl", name: "Наложение последовательности (seqovl)", description: "Без отдельных фейков. Мягкий и быстрый способ.", tls: ["--lua-desync=multisplit:pos=1:seqovl=681"], http: [], quic: null },
+    { id: "custom", name: "Свои параметры", description: "Параметры, заданные вручную.", tls: [], http: [], quic: null },
+  ];
+  switch (cmd) {
+    case "get_state": return Promise.resolve({
+      status: { running: m.running, since: m.since, last_error: null, command_line: "", pid: null },
+      settings: m.settings, engine_version: "1.0.7", app_version: "1.1.0", conflicts: [], testing: false,
+      data_dir: "C:\\Users\\user\\AppData\\Local\\Zapret2GUI", user_domains: 1, auto_domains: 0, autostart: m.settings.autostart,
+      content_version: 1, platform: { build: 26100, mica: false, accent: { dark_theme: "#4cc2ff", light_theme: "#005fb8" } },
+    });
+    case "start_engine": return wait(900).then(() => { m.running = true; m.since = Math.floor(Date.now() / 1000); });
+    case "stop_engine": return wait(200).then(() => { m.running = false; });
+    case "get_strategies": return Promise.resolve(strategies);
+    case "save_settings": m.settings = args.new; return Promise.resolve(m.settings);
+    case "get_command_line": return Promise.resolve("engine\\bin\\winws2.exe --wf-tcp-out=80,443 ...");
+    case "read_list": return Promise.resolve(m.lists[args.name] || "");
+    case "write_list": m.lists[args.name] = args.content; return Promise.resolve();
+    case "get_logs": return Promise.resolve(["[app] Предпросмотр интерфейса без Tauri"]);
+    case "run_strategy_test": return wait(1500).then(() => ({
+      baseline: { id: "baseline", name: "Без обхода", ok: 1, total: 7, avg_ms: 300, checks: [], yt_ok: 0, yt_total: 4, other_ok: 1, other_total: 3 },
+      results: [
+        { id: "fake_multisplit_md5", name: "Фейк + разрезание (MD5)", ok: 4, total: 7, avg_ms: 420, checks: [], yt_ok: 1, yt_total: 4, other_ok: 3, other_total: 3 },
+        { id: "seqovl", name: "Наложение последовательности (seqovl)", ok: 6, total: 7, avg_ms: 380, checks: [], yt_ok: 4, yt_total: 4, other_ok: 2, other_total: 3 },
+      ],
+      best: "fake_multisplit_md5", best_youtube: "seqovl", cancelled: false,
+    }));
+    case "check_engine_update": return wait(500).then(() => ({ current: "1.0.7", latest: "1.0.7", available: false, published_at: "2026-11-05T08:01:55Z" }));
+    case "check_app_update": return Promise.resolve({ configured: true, available: false });
+    case "check_content_update": return wait(400).then(() => ({ current: 1, latest: 1, available: false }));
+    case "update_content": return wait(400).then(() => "Стратегии и списки актуальны (версия 1)");
+    case "get_last_report": return Promise.resolve(null);
+    default: return Promise.resolve(null);
+  }
+}

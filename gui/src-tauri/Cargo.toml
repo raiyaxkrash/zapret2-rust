@@ -1,6 +1,6 @@
 [package]
 name = "zapret2-gui"
-version = "1.0.0"
+version = "1.1.0"
 description = "Zapret2 GUI — графическая оболочка для zapret2 (winws2) под Windows"
 edition = "2021"
 publish = false
