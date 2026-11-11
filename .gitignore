@@ -1,0 +1,6 @@
+gui/node_modules/
+gui/src-tauri/target/
+gui/src-tauri/gen/
+# Закрытый ключ подписи обновлений: никогда не публикуйте его
+gui/.keys/
+*.key

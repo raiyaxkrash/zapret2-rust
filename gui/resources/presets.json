@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "quic_default": [
+    "--payload=quic_initial",
+    "--lua-desync=fake:blob=quic_google:repeats=6"
+  ],
+  "discord_voice": [
+    "--payload=stun,discord_ip_discovery",
+    "--lua-desync=fake:blob=0x00000000000000000000000000000000:repeats=6"
+  ],
+  "strategies": [
+    {
+      "id": "fake_multisplit_md5",
+      "name": "Фейк + разрезание (MD5)",
+      "description": "Универсальный вариант: перед настоящим запросом отправляется фейковый TLS ClientHello с подписью TCP MD5, затем сам запрос режется на части.",
+      "tls": [
+        "--payload=tls_client_hello",
+        "--lua-desync=fake:blob=tls_google:tcp_md5:repeats=6",
+        "--lua-desync=multisplit:pos=1,midsld"
+      ],
+      "http": [
+        "--payload=http_req",
+        "--lua-desync=fake:blob=fake_default_http:tcp_md5:repeats=6",
+        "--lua-desync=multisplit:pos=method+2,midsld"
+      ]
+    },
+    {
+      "id": "fake_multidisorder_badseq",
+      "name": "Фейк + обратный порядок (badseq)",
+      "description": "Фейк с неверным ACK (аналог badseq), части запроса отправляются в обратном порядке.",
+      "tls": [
+        "--payload=tls_client_hello",
+        "--lua-desync=fake:blob=tls_google:tcp_ack=-66000:tcp_ts_up:repeats=6",
+        "--lua-desync=multidisorder:pos=1,midsld"
+      ],
+      "http": [
+        "--payload=http_req",
+        "--lua-desync=fake:blob=fake_default_http:tcp_ack=-66000:tcp_ts_up:repeats=6",
+        "--lua-desync=multidisorder:pos=method+2,midsld"
+      ]
+    },
+    {
+      "id": "fake_multisplit_ts",
+      "name": "Фейк + разрезание (timestamp)",
+      "description": "Фейк с испорченной TCP timestamp. Часто работает там, где MD5 режется провайдером.",
+      "tls": [
+        "--payload=tls_client_hello",
+        "--lua-desync=fake:blob=tls_google:tcp_ts=-1000:repeats=6",
+        "--lua-desync=multisplit:pos=1,sniext+1"
+      ],
+      "http": [
+        "--payload=http_req",
+        "--lua-desync=fake:blob=fake_default_http:tcp_ts=-1000:repeats=6",
+        "--lua-desync=multisplit:pos=method+2"
+      ]
+    },
+    {
+      "id": "seqovl",
+      "name": "Наложение последовательности (seqovl)",
+      "description": "Без отдельных фейков: в первый сегмент подмешиваются ложные данные, которые сервер отбросит, а DPI примет. Мягкий и быстрый способ.",
+      "tls": [
+        "--payload=tls_client_hello",
+        "--lua-desync=multisplit:pos=1:seqovl=681:seqovl_pattern=tls_google"
+      ],
+      "http": [
+        "--payload=http_req",
+        "--lua-desync=multisplit:pos=method+2:seqovl=1"
+      ]
+    },
+    {
+      "id": "fakedsplit_autottl",
+      "name": "Фейки с авто-TTL",
+      "description": "Фейки с TTL, рассчитанным так, чтобы они дошли до DPI, но не до сервера. Плюс разрезание со смешиванием фейков.",
+      "tls": [
+        "--payload=tls_client_hello",
+        "--lua-desync=fake:blob=tls_google:ip_autottl=-2,3-20:ip6_autottl=-2,3-20:repeats=6",
+        "--lua-desync=fakedsplit:pos=1:ip_autottl=-2,3-20:ip6_autottl=-2,3-20"
+      ],
+      "http": [
+        "--payload=http_req",
+        "--lua-desync=fake:blob=fake_default_http:ip_autottl=-2,3-20:ip6_autottl=-2,3-20:repeats=6",
+        "--lua-desync=fakedsplit:pos=method+2:ip_autottl=-2,3-20:ip6_autottl=-2,3-20"
+      ]
+    },
+    {
+      "id": "fake_fakeddisorder_badsum",
+      "name": "Фейк + перемешивание (badsum)",
+      "description": "Фейки с неверной контрольной суммой и перемешанный порядок частей.",
+      "tls": [
+        "--payload=tls_client_hello",
+        "--lua-desync=fake:blob=tls_google:badsum:repeats=6",
+        "--lua-desync=fakeddisorder:pos=midsld:badsum"
+      ],
+      "http": [
+        "--payload=http_req",
+        "--lua-desync=fake:blob=fake_default_http:badsum:repeats=6",
+        "--lua-desync=fakeddisorder:pos=method+2:badsum"
+      ]
+    },
+    {
+      "id": "multisplit_only",
+      "name": "Только разрезание",
+      "description": "Без фейков, запрос режется на множество частей. Самый безобидный вариант, помогает против простого DPI.",
+      "tls": [
+        "--payload=tls_client_hello",
+        "--lua-desync=multisplit:pos=1,sniext+1,host+1,midsld-2,midsld,midsld+2,endhost-1"
+      ],
+      "http": [
+        "--payload=http_req",
+        "--lua-desync=multisplit:pos=method+2,midsld"
+      ]
+    }
+  ]
+}

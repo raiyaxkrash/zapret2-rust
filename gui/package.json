@@ -1,0 +1,14 @@
+{
+  "name": "zapret2-gui",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Графическая оболочка для zapret2 под Windows",
+  "scripts": {
+    "tauri": "tauri",
+    "build": "tauri build",
+    "dev": "tauri dev"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

@@ -1,0 +1,16 @@
+# YouTube. Поддомены учитываются автоматически.
+# Этот список обновляется вместе с приложением. Свои сайты добавляйте в «Мои сайты».
+youtube.com
+youtu.be
+yt.be
+youtube-nocookie.com
+youtubekids.com
+youtubei.googleapis.com
+youtube.googleapis.com
+yt3.googleusercontent.com
+googlevideo.com
+ytimg.com
+ggpht.com
+wide-youtube.l.google.com
+youtube-ui.l.google.com
+jnn-pa.googleapis.com

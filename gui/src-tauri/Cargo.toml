@@ -1,0 +1,32 @@
+[package]
+name = "zapret2-gui"
+version = "1.0.0"
+description = "Zapret2 GUI — графическая оболочка для zapret2 (winws2) под Windows"
+edition = "2021"
+publish = false
+
+[lib]
+name = "zapret2_gui_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-updater = "2"
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "http2"] }
+tokio = { version = "1", features = ["time", "sync", "macros"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+sha2 = "0.10"
+hex = "0.4"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

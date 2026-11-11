@@ -1,0 +1,45 @@
+# Сборка Zapret2 GUI и публикация релиза с файлом latest.json для автообновления.
+# Запуск: создайте тег вида v1.0.1 (версия должна совпадать с gui/src-tauri/tauri.conf.json) и отправьте его на GitHub.
+# Нужен секрет репозитория TAURI_SIGNING_PRIVATE_KEY с содержимым gui/.keys/zapret2gui.key.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: gui/src-tauri
+
+      - name: Install Tauri CLI
+        working-directory: gui
+        run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        with:
+          projectPath: gui
+          tagName: ${{ github.ref_name }}
+          releaseName: "Zapret2 GUI ${{ github.ref_name }}"
+          releaseBody: "Скачайте установщик *-setup.exe ниже. Установленное приложение обновится само."
+          releaseDraft: false
+          includeUpdaterJson: true

@@ -1,0 +1,70 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Zapret2 GUI",
+  "version": "1.0.0",
+  "identifier": "io.github.zapret2gui",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Zapret2",
+        "width": 1080,
+        "height": 720,
+        "minWidth": 900,
+        "minHeight": 620,
+        "center": true,
+        "visible": false,
+        "theme": "Dark",
+        "backgroundColor": "#0d0f14"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: http://asset.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
+    "publisher": "Zapret2 GUI",
+    "shortDescription": "Обход блокировок на базе zapret2",
+    "longDescription": "Графическая оболочка для zapret2 (winws2): готовые стратегии для YouTube и Discord, свои списки сайтов, автоподбор стратегии и автообновление.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../../binaries/windows-x86_64/*": "engine/bin/",
+      "../../lua/*.lua": "engine/lua/",
+      "../../files/fake/*": "engine/fake/",
+      "../../init.d/windivert.filter.examples/*.txt": "engine/filters/",
+      "../../docs/LICENSE.txt": "engine/LICENSE.txt",
+      "../resources/engine-version.txt": "engine/version.txt",
+      "../resources/presets.json": "presets.json",
+      "../resources/lists/*": "lists/"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine",
+        "languages": ["Russian", "English"],
+        "displayLanguageSelector": false,
+        "installerHooks": "./installer-hooks.nsh"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU5OUEyODg2QTlDODQ3NzMKUldSelI4aXBoaWlhNlM1S3J3Y3RndHd3Qm9GSHd2VHRwVHlleG8zUFJXNmdoRnp5RFZNYzB3cXoK",
+      "endpoints": [],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

@@ -1,0 +1,26 @@
+# Discord. Поддомены учитываются автоматически.
+# Этот список обновляется вместе с приложением. Свои сайты добавляйте в «Мои сайты».
+discord.com
+discord.gg
+discord.co
+discord.app
+discord.dev
+discord.new
+discord.gift
+discord.gifts
+discord.media
+discord.design
+discord.store
+discord.tools
+discordapp.com
+discordapp.net
+discordcdn.com
+discordstatus.com
+discordactivities.com
+discordmerch.com
+discordpartygames.com
+discord-activities.com
+discordsays.com
+discordsez.com
+discord-attachments-uploads-prd.storage.googleapis.com
+dis.gd

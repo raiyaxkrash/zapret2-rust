@@ -1,0 +1,26 @@
+# Исключения: к этим сайтам обход никогда не применяется.
+# Полезно в режиме «Все сайты», чтобы не ломать банки и госуслуги.
+gosuslugi.ru
+nalog.gov.ru
+mos.ru
+sberbank.ru
+online.sberbank.ru
+tbank.ru
+tinkoff.ru
+vtb.ru
+alfabank.ru
+yandex.ru
+ya.ru
+yandex.net
+vk.com
+vk.ru
+userapi.com
+mail.ru
+ok.ru
+ozon.ru
+wildberries.ru
+avito.ru
+microsoft.com
+windowsupdate.com
+apple.com
+steamcontent.com

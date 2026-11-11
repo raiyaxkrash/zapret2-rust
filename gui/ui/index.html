@@ -1,0 +1,241 @@
+﻿<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zapret2</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">
+          <svg viewBox="0 0 1024 1024"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c5cff"/><stop offset="1" stop-color="#18c8a8"/></linearGradient></defs><rect x="64" y="64" width="896" height="896" rx="216" fill="url(#lg)"/><path d="M332 330 H692 L382 694 H692" fill="none" stroke="#fff" stroke-width="92" stroke-linecap="round" stroke-linejoin="round"/><circle cx="752" cy="292" r="52" fill="#fff" opacity=".9"/></svg>
+        </div>
+        <div>
+          <div class="brand-name">Zapret2</div>
+          <div class="brand-sub">обход блокировок</div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-page="home"><span class="ico" data-icon="home"></span>Главная</button>
+        <button class="nav-item" data-page="strategies"><span class="ico" data-icon="sliders"></span>Стратегии</button>
+        <button class="nav-item" data-page="lists"><span class="ico" data-icon="list"></span>Списки сайтов</button>
+        <button class="nav-item" data-page="logs"><span class="ico" data-icon="terminal"></span>Журнал</button>
+        <button class="nav-item" data-page="settings"><span class="ico" data-icon="gear"></span>Настройки</button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div class="status-pill" id="sidePill"><span class="dot"></span><span id="sidePillText">Выключен</span></div>
+        <div class="versions" id="versions"></div>
+      </div>
+    </aside>
+
+    <main class="content">
+      <!-- ============================== HOME -->
+      <section class="page active" id="page-home">
+        <div id="banners"></div>
+
+        <div class="hero card">
+          <button class="power" id="powerBtn" aria-label="Включить или выключить обход">
+            <span class="power-ring"></span>
+            <span class="power-core"><span class="ico ico-xl" data-icon="power"></span></span>
+          </button>
+          <div class="hero-text">
+            <div class="hero-state" id="heroState">Обход выключен</div>
+            <div class="hero-sub" id="heroSub">Нажмите кнопку, чтобы включить</div>
+            <div class="hero-meta">
+              <button class="chip" id="heroStrategy" data-goto="strategies"><span class="ico" data-icon="sliders"></span><span id="heroStrategyName">—</span></button>
+              <span class="chip muted" id="heroUptime" hidden><span class="ico" data-icon="clock"></span><span id="heroUptimeText"></span></span>
+            </div>
+          </div>
+        </div>
+
+        <h2 class="section-title">Что обходить</h2>
+        <div class="services">
+          <label class="service" data-key="youtube">
+            <div class="service-ico yt"><span class="ico" data-icon="play"></span></div>
+            <div class="service-body"><div class="service-name">YouTube</div><div class="service-desc">Сайт, видео и превью</div></div>
+            <span class="switch"><input type="checkbox" data-setting="youtube" /><i></i></span>
+          </label>
+          <label class="service" data-key="discord">
+            <div class="service-ico dc"><span class="ico" data-icon="chat"></span></div>
+            <div class="service-body"><div class="service-name">Discord</div><div class="service-desc">Сайт, приложение, вложения</div></div>
+            <span class="switch"><input type="checkbox" data-setting="discord" /><i></i></span>
+          </label>
+          <label class="service" data-key="discord_voice">
+            <div class="service-ico dv"><span class="ico" data-icon="mic"></span></div>
+            <div class="service-body"><div class="service-name">Голос Discord</div><div class="service-desc">Голосовые каналы и звонки</div></div>
+            <span class="switch"><input type="checkbox" data-setting="discord_voice" /><i></i></span>
+          </label>
+          <label class="service" data-key="custom">
+            <div class="service-ico cu"><span class="ico" data-icon="globe"></span></div>
+            <div class="service-body"><div class="service-name">Мои сайты</div><div class="service-desc" id="customDesc">Сайты из вашего списка</div></div>
+            <span class="switch"><input type="checkbox" data-setting="custom" /><i></i></span>
+          </label>
+        </div>
+
+        <div class="card row-card" id="customModeCard">
+          <div>
+            <div class="row-title">Режим «Мои сайты»</div>
+            <div class="row-desc">Как выбирать сайты, к которым применяется обход</div>
+          </div>
+          <div class="segmented" id="customMode">
+            <button data-mode="list">Только из списка</button>
+            <button data-mode="auto">Список + авто</button>
+            <button data-mode="all">Все сайты</button>
+          </div>
+        </div>
+
+        <div class="card row-card">
+          <div>
+            <div class="row-title">QUIC / HTTP3</div>
+            <div class="row-desc">Обход и для UDP-соединений браузера. Если видео грузится плохо, попробуйте выключить.</div>
+          </div>
+          <span class="switch"><input type="checkbox" data-setting="quic" /><i></i></span>
+        </div>
+      </section>
+
+      <!-- ============================== STRATEGIES -->
+      <section class="page" id="page-strategies">
+        <div class="page-head">
+          <div>
+            <h1>Стратегии</h1>
+            <p class="lead">Способ, которым обманывается система блокировки. У разных провайдеров работают разные стратегии.</p>
+          </div>
+          <div class="head-actions">
+            <button class="btn ghost" id="cancelTestBtn" hidden>Остановить</button>
+            <button class="btn primary" id="testBtn"><span class="ico" data-icon="wand"></span>Подобрать автоматически</button>
+          </div>
+        </div>
+
+        <div class="card test-panel" id="testPanel" hidden>
+          <div class="test-head">
+            <div>
+              <div class="row-title" id="testTitle">Подбор стратегии</div>
+              <div class="row-desc" id="testSub">Проверяем, какие стратегии открывают сайты</div>
+            </div>
+            <div class="test-count" id="testCount"></div>
+          </div>
+          <div class="progress"><div class="progress-bar" id="testBar"></div></div>
+          <div class="test-rows" id="testRows"></div>
+          <div class="test-foot" id="testFoot" hidden></div>
+        </div>
+
+        <div class="strategy-list" id="strategyList"></div>
+
+        <details class="card cmd-card">
+          <summary><span class="ico" data-icon="code"></span>Командная строка winws2</summary>
+          <pre class="code" id="cmdLine"></pre>
+          <div class="cmd-actions"><button class="btn small ghost" id="copyCmd"><span class="ico" data-icon="copy"></span>Копировать</button></div>
+        </details>
+      </section>
+
+      <!-- ============================== LISTS -->
+      <section class="page" id="page-lists">
+        <div class="page-head">
+          <div>
+            <h1>Списки сайтов</h1>
+            <p class="lead">По одному домену в строке. Поддомены учитываются автоматически: <code>example.com</code> включает <code>www.example.com</code>.</p>
+          </div>
+          <div class="head-actions">
+            <button class="btn ghost" id="openListsDir"><span class="ico" data-icon="folder"></span>Папка</button>
+          </div>
+        </div>
+        <div class="tabs" id="listTabs">
+          <button class="tab active" data-list="user">Мои сайты</button>
+          <button class="tab" data-list="exclude">Исключения</button>
+          <button class="tab" data-list="auto">Автосписок</button>
+          <button class="tab" data-list="youtube">YouTube</button>
+          <button class="tab" data-list="discord">Discord</button>
+        </div>
+        <div class="card editor-card">
+          <div class="editor-hint" id="listHint"></div>
+          <textarea id="listEditor" spellcheck="false"></textarea>
+          <div class="editor-foot">
+            <span class="muted" id="listCount"></span>
+            <div class="editor-actions">
+              <button class="btn ghost" id="listClear" hidden>Очистить</button>
+              <button class="btn primary" id="listSave">Сохранить</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================== LOGS -->
+      <section class="page" id="page-logs">
+        <div class="page-head">
+          <div>
+            <h1>Журнал</h1>
+            <p class="lead">Сообщения приложения и winws2. Подробный вывод включается в настройках.</p>
+          </div>
+          <div class="head-actions">
+            <label class="check"><input type="checkbox" id="autoScroll" checked /> Автопрокрутка</label>
+            <button class="btn ghost" id="copyLogs"><span class="ico" data-icon="copy"></span>Копировать</button>
+            <button class="btn ghost" id="clearLogs"><span class="ico" data-icon="trash"></span>Очистить</button>
+          </div>
+        </div>
+        <pre class="card log" id="log"></pre>
+      </section>
+
+      <!-- ============================== SETTINGS -->
+      <section class="page" id="page-settings">
+        <div class="page-head"><div><h1>Настройки</h1></div></div>
+
+        <h2 class="section-title">Запуск</h2>
+        <div class="card list-card">
+          <div class="row"><div><div class="row-title">Запускать вместе с Windows</div><div class="row-desc">Через Планировщик заданий, без запроса прав при каждом входе</div></div><span class="switch"><input type="checkbox" data-setting="autostart" /><i></i></span></div>
+          <div class="row"><div><div class="row-title">Запускать свёрнутым в трей</div><div class="row-desc">При автозапуске окно не показывается</div></div><span class="switch"><input type="checkbox" data-setting="start_minimized" /><i></i></span></div>
+          <div class="row"><div><div class="row-title">Включать обход при запуске</div><div class="row-desc">Сразу после старта программы</div></div><span class="switch"><input type="checkbox" data-setting="engine_on_launch" /><i></i></span></div>
+          <div class="row"><div><div class="row-title">Сворачивать в трей при закрытии</div><div class="row-desc">Обход продолжит работать в фоне</div></div><span class="switch"><input type="checkbox" data-setting="close_to_tray" /><i></i></span></div>
+        </div>
+
+        <h2 class="section-title">Обновления</h2>
+        <div class="update-grid">
+          <div class="card update-card">
+            <div class="update-head"><span class="ico" data-icon="box"></span><div><div class="row-title">zapret2</div><div class="row-desc">winws2, Lua-скрипты, драйвер WinDivert</div></div></div>
+            <div class="update-ver"><span class="muted">Установлена</span><b id="engVer">—</b></div>
+            <div class="update-status" id="engStatus">Обновления берутся из релизов bol-van/zapret2 на GitHub.</div>
+            <div class="update-actions">
+              <button class="btn ghost" id="engCheck">Проверить</button>
+              <button class="btn primary" id="engInstall" hidden>Обновить</button>
+            </div>
+            <label class="row compact"><span>Обновлять автоматически</span><span class="switch"><input type="checkbox" data-setting="engine_auto_update" /><i></i></span></label>
+          </div>
+
+          <div class="card update-card">
+            <div class="update-head"><span class="ico" data-icon="refresh"></span><div><div class="row-title">Приложение</div><div class="row-desc">Интерфейс, стратегии и списки</div></div></div>
+            <div class="update-ver"><span class="muted">Версия</span><b id="appVer">—</b></div>
+            <div class="update-status" id="appStatus"></div>
+            <div class="update-actions">
+              <button class="btn ghost" id="appCheck">Проверить</button>
+              <button class="btn primary" id="appInstall" hidden>Установить</button>
+            </div>
+            <label class="row compact"><span>Проверять автоматически</span><span class="switch"><input type="checkbox" data-setting="app_auto_check" /><i></i></span></label>
+            <div class="field">
+              <label for="updateUrl">Источник обновлений (latest.json)</label>
+              <div class="field-row">
+                <input id="updateUrl" type="url" placeholder="https://github.com/USER/REPO/releases/latest/download/latest.json" />
+                <button class="btn ghost small" id="saveUpdateUrl">Сохранить</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <h2 class="section-title">Дополнительно</h2>
+        <div class="card list-card">
+          <div class="row"><div><div class="row-title">Подробный журнал</div><div class="row-desc">winws2 будет писать отладочный вывод (--debug). Немного нагружает процессор</div></div><span class="switch"><input type="checkbox" data-setting="debug_log" /><i></i></span></div>
+          <div class="row"><div><div class="row-title">Папка с данными</div><div class="row-desc" id="dataDir"></div></div><button class="btn ghost small" id="openDataDir"><span class="ico" data-icon="folder"></span>Открыть</button></div>
+        </div>
+
+        <p class="about">Zapret2 GUI использует <a href="#" data-url="https://github.com/bol-van/zapret2">zapret2</a> (bol-van, MIT) и драйвер WinDivert. Антивирусы иногда ошибочно считают WinDivert опасным: это драйвер перехвата пакетов, а не вирус.</p>
+      </section>
+    </main>
+  </div>
+
+  <div class="toasts" id="toasts"></div>
+  <script src="app.js"></script>
+</body>
+</html>
