@@ -11,6 +11,7 @@
     <header class="titlebar" data-tauri-drag-region>
       <svg class="app-icon" viewBox="0 0 1024 1024" data-tauri-drag-region><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c5cff"/><stop offset="1" stop-color="#18c8a8"/></linearGradient></defs><rect x="64" y="64" width="896" height="896" rx="216" fill="url(#lg)"/><path d="M332 330 H692 L382 694 H692" fill="none" stroke="#fff" stroke-width="92" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <span class="app-title" data-tauri-drag-region>Zapret2</span>
+      <button class="update-pill" id="updatePill" hidden title="Установить обновление"><span data-icon="download"></span><span id="updatePillText">Обновление</span></button>
       <div class="caption">
         <button id="winMin" title="Свернуть"><span data-icon="min"></span></button>
         <button id="winMax" title="Развернуть"><span data-icon="max"></span></button>
@@ -32,7 +33,7 @@
             <div class="nav-status-sub" id="navStatusSub"></div>
           </div>
         </div>
-        <button class="nav-item" data-page="settings"><span data-icon="gear"></span>Настройки</button>
+        <button class="nav-item" data-page="settings"><span data-icon="gear"></span>Настройки<span class="nav-badge" id="settingsBadge" hidden></span></button>
       </nav>
 
       <main class="content">
@@ -205,6 +206,7 @@
                 <button data-theme="dark">Тёмная</button>
               </div>
             </div>
+            <label class="setting"><span data-icon="flash"></span><div class="setting-text"><div class="setting-title">Анимации</div><div class="setting-desc">Выключите на слабом компьютере или ноутбуке, чтобы интерфейс меньше нагружал видеокарту</div></div><div class="setting-control"><span class="switch"><input type="checkbox" data-setting="animations" /><i></i></span></div></label>
           </div>
 
           <h2 class="section-title">Запуск</h2>

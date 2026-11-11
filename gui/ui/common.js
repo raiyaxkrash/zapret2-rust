@@ -79,14 +79,70 @@ function fmtUptime(sec) {
 const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
 let appearance = { theme: "system", platform: null };
 
-/** Тема: "system" | "light" | "dark". */
-function applyAppearance(theme, platform) {
+/** Тема ("system" | "light" | "dark") и анимации. */
+function applyAppearance(theme, platform, animations) {
   if (theme) appearance.theme = theme;
   if (platform) appearance.platform = platform;
+  if (animations !== undefined) appearance.animations = animations !== false;
   const dark = appearance.theme === "dark" || (appearance.theme === "system" && darkQuery.matches);
   document.documentElement.dataset.theme = dark ? "dark" : "light";
+  document.documentElement.classList.toggle("no-anim", appearance.animations === false);
 }
 darkQuery.addEventListener("change", () => applyAppearance());
+
+/* ===================================================================== видимость окна */
+/* Когда окно скрыто в трей или свёрнуто, останавливаем анимации и периодические обновления. */
+// Флаг от приложения (окно спрятано в трей); свёрнутое окно определяется через document.hidden.
+let windowShown = true;
+const visibilityHandlers = [];
+function isActive() { return windowShown && !document.hidden; }
+function onVisible(fn) { visibilityHandlers.push(fn); }
+function syncVisibility() {
+  const active = isActive();
+  document.documentElement.classList.toggle("paused", !active);
+  if (active) visibilityHandlers.forEach((fn) => fn());
+}
+document.addEventListener("visibilitychange", syncVisibility);
+listen("visibility", ({ payload }) => { windowShown = !!payload; syncVisibility(); });
+syncVisibility();
+
+/** Периодическая задача, которая работает только пока окно видно. */
+function everyWhileVisible(ms, fn) {
+  setInterval(() => { if (isActive()) fn(); }, ms);
+}
+
+/* ===================================================================== значок обновления */
+let updateInstalling = false;
+function renderUpdatePill(upd) {
+  const pill = $("#updatePill");
+  if (!pill) return;
+  pill.hidden = !upd;
+  if (upd && !updateInstalling) {
+    $("#updatePillText").textContent = `Обновить до ${upd.latest}`;
+    pill.title = upd.notes ? `Что нового:\n${upd.notes}` : "Установить обновление";
+  }
+  const badge = $("#settingsBadge");
+  if (badge) badge.hidden = !upd;
+}
+async function installAppUpdate() {
+  if (updateInstalling) return;
+  updateInstalling = true;
+  const pill = $("#updatePill");
+  if (pill) { pill.disabled = true; $("#updatePillText").textContent = "Загрузка…"; }
+  try {
+    await invoke("install_app_update"); // после установки приложение перезапустится
+  } catch (e) {
+    updateInstalling = false;
+    if (pill) { pill.disabled = false; $("#updatePillText").textContent = "Повторить"; }
+    toast(errText(e), "err", 9000);
+  }
+}
+$("#updatePill")?.addEventListener("click", installAppUpdate);
+listen("app-update-available", ({ payload }) => renderUpdatePill(payload));
+listen("app-update-progress", ({ payload: [done, total] }) => {
+  if (!updateInstalling || !$("#updatePillText")) return;
+  $("#updatePillText").textContent = total ? `Загрузка ${Math.round((done / total) * 100)}%` : "Загрузка…";
+});
 
 /* ===================================================================== toasts */
 function toast(msg, kind = "ok", ms = 4500) {
@@ -117,7 +173,9 @@ function mockInvoke(cmd, args) {
       status: { running: m.running, since: m.since, last_error: null, command_line: "", pid: null },
       settings: m.settings, engine_version: "1.0.7", app_version: "1.1.0", conflicts: [], testing: false,
       data_dir: "C:\\Users\\user\\AppData\\Local\\Zapret2GUI", user_domains: 1, auto_domains: 0, autostart: m.settings.autostart,
-      content_version: 1, platform: { build: 26100, mica: false, accent: { dark_theme: "#4cc2ff", light_theme: "#005fb8" } },
+      content_version: 2,
+      app_update: new URLSearchParams(location.search).get("upd") ? { configured: true, available: true, current: "1.1.0", latest: "1.2.0", notes: "Меньше нагрузка на видеокарту" } : null,
+      platform: { build: 26100, mica: false, accent: { dark_theme: "#4cc2ff", light_theme: "#005fb8" } },
     });
     case "start_engine": return wait(900).then(() => { m.running = true; m.since = Math.floor(Date.now() / 1000); });
     case "stop_engine": return wait(200).then(() => { m.running = false; });

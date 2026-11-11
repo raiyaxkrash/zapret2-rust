@@ -78,20 +78,23 @@ body {
   overflow: hidden;
   cursor: default;
 }
-/* Цветные пятна на фоне */
-body::before {
-  content: ""; position: fixed; inset: -20%; z-index: -1; pointer-events: none;
+/* Цветные пятна на фоне. Статичные и без filter/blur: рисуются один раз
+   и не нагружают видеокарту (раньше анимация и размытие перерисовывали окно каждый кадр). */
+html {
   background:
-    radial-gradient(38% 42% at 18% 22%, var(--blob-a), transparent 70%),
-    radial-gradient(34% 38% at 86% 18%, var(--blob-b), transparent 70%),
-    radial-gradient(40% 44% at 70% 92%, var(--blob-c), transparent 70%);
-  filter: blur(30px);
-  animation: drift 28s ease-in-out infinite alternate;
+    radial-gradient(44% 50% at 10% 12%, var(--blob-a), transparent 72%),
+    radial-gradient(40% 46% at 92% 6%, var(--blob-b), transparent 72%),
+    radial-gradient(48% 52% at 72% 102%, var(--blob-c), transparent 72%),
+    var(--bg);
+  background-attachment: fixed;
 }
-@keyframes drift {
-  0% { transform: translate3d(0, 0, 0) scale(1); }
-  50% { transform: translate3d(3%, -2%, 0) scale(1.05); }
-  100% { transform: translate3d(-3%, 2%, 0) scale(1); }
+
+/* Окно скрыто (свёрнуто в трей) — останавливаем все анимации. */
+html.paused *, html.paused *::before, html.paused *::after { animation-play-state: paused !important; }
+/* «Без анимаций» в настройках или в системе. */
+html.no-anim *, html.no-anim *::before, html.no-anim *::after { animation: none !important; transition: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
 button, input, textarea, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
@@ -106,7 +109,6 @@ code { font-family: var(--font-mono); font-size: 12.5px; background: var(--glass
 .glass, .card {
   background: var(--glass);
   border: 1px solid var(--line);
-  backdrop-filter: blur(24px) saturate(140%);
   border-radius: var(--r-lg);
 }
 
@@ -123,6 +125,21 @@ code { font-family: var(--font-mono); font-size: 12.5px; background: var(--glass
 .caption button .ico { width: 15px; height: 15px; }
 .caption button:hover { background: var(--glass-2); color: var(--text); }
 .caption button.close:hover { background: linear-gradient(135deg, #f43f5e, #db2777); color: #fff; }
+
+/* Значок «Доступно обновление» */
+.update-pill {
+  display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 11px 0 8px; border: 0; border-radius: 99px;
+  background: var(--grad); color: #fff; font: 700 12px/1 var(--font); white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(219, 39, 119, .4); transition: transform .2s var(--spring), box-shadow .2s;
+  animation: pillIn .5s var(--spring), pillPulse 1.6s ease-in-out .5s 3;
+}
+.update-pill .ico { width: 14px; height: 14px; }
+.update-pill:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(219, 39, 119, .55); }
+.update-pill:active { transform: scale(.95); }
+.update-pill:disabled { opacity: .8; cursor: default; transform: none; }
+@keyframes pillIn { from { opacity: 0; transform: scale(.6); } }
+@keyframes pillPulse { 50% { box-shadow: 0 0 0 6px rgba(219, 39, 119, .18), 0 4px 14px rgba(219, 39, 119, .4); } }
+.nav-badge { margin-left: auto; width: 8px; height: 8px; border-radius: 50%; background: var(--pink); box-shadow: 0 0 8px var(--pink); }
 
 /* ---------------------------------------------------------------- layout */
 .window { display: flex; flex-direction: column; height: 100vh; }
@@ -177,7 +194,7 @@ h1 { font: 800 32px/1.15 var(--font-display); margin: 0 0 6px; letter-spacing: -
 .setting {
   display: flex; align-items: center; gap: 16px; padding: 14px 18px; min-height: 70px;
   background: var(--glass); border: 1px solid var(--line); border-radius: var(--r-lg);
-  backdrop-filter: blur(24px); transition: background .2s, border-color .2s, transform .2s var(--spring);
+  transition: background .2s, border-color .2s, transform .2s var(--spring);
 }
 label.setting { cursor: pointer; }
 label.setting:hover { background: var(--glass-2); border-color: var(--line-2); }
@@ -258,7 +275,7 @@ label.setting:hover { background: var(--glass-2); border-color: var(--line-2); }
   color: #fff; background: var(--grad-on);
   box-shadow: 0 0 0 10px rgba(52, 211, 153, .12), 0 0 60px rgba(16, 185, 129, .5), 0 18px 40px rgba(6, 182, 212, .3);
 }
-.power.on::before { opacity: 1; animation: spin 6s linear infinite; background: conic-gradient(from 0deg, #10b981, #06b6d4, #a78bfa, #10b981); }
+.power.on::before { opacity: 1; background: conic-gradient(from 0deg, #10b981, #06b6d4, #a78bfa, #10b981); }
 .power .ring { position: absolute; inset: -12px; border-radius: 50%; border: 3px solid transparent; border-top-color: var(--pink); border-right-color: var(--violet); opacity: 0; }
 .power.busy .ring { opacity: 1; animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -403,7 +420,7 @@ textarea[readonly] { color: var(--text-2); }
 .toasts { position: fixed; right: 22px; bottom: 22px; display: flex; flex-direction: column; gap: 10px; z-index: 50; max-width: 400px; }
 .toast {
   display: flex; gap: 12px; align-items: flex-start; padding: 13px 16px; border-radius: 16px;
-  background: var(--glass-3); border: 1px solid var(--line-2); box-shadow: var(--shadow); backdrop-filter: blur(30px);
+  background: var(--glass-3); border: 1px solid var(--line-2); box-shadow: var(--shadow);
   animation: toastIn .45s var(--spring); font-size: 13.5px; font-weight: 600; white-space: pre-wrap; word-break: break-word;
 }
 :root[data-theme="dark"] .toast { background: rgba(30, 26, 48, .92); }

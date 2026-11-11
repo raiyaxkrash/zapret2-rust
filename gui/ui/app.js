@@ -11,7 +11,7 @@ async function refresh() {
   try {
     state = await invoke("get_state");
     testing = state.testing;
-    applyAppearance(state.settings.theme, state.platform);
+    applyAppearance(state.settings.theme, state.platform, state.settings.animations);
     render();
   } catch (e) {
     console.error(e);
@@ -126,6 +126,7 @@ function render() {
   $("#dataDir").textContent = state.data_dir;
   if (document.activeElement !== $("#updateUrl")) $("#updateUrl").value = s.app_update_url || "";
 
+  renderUpdatePill(state.app_update);
   $("#testBtn").disabled = testing;
   $("#cancelTestBtn").hidden = !testing;
   renderStrategySelection();
@@ -139,7 +140,7 @@ function updateUptime() {
     $("#heroUptimeText").textContent = fmtUptime(Math.max(0, Math.floor(Date.now() / 1000) - st.since));
   } else el.hidden = true;
 }
-setInterval(updateUptime, 1000);
+everyWhileVisible(1000, updateUptime);
 
 /* ===================================================================== actions */
 async function togglePower() {
@@ -164,6 +165,7 @@ async function saveSettings(patch, { quiet = false } = {}) {
   const willRestart = state.status.running && ENGINE_KEYS.some((k) => k in patch);
   if (willRestart) { busy = true; render(); }
   if ("theme" in patch) applyAppearance(patch.theme);
+  if ("animations" in patch) applyAppearance(null, null, patch.animations);
   try {
     state.settings = await invoke("save_settings", { new: next });
     if (!quiet && willRestart) toast("Настройки применены, обход перезапущен");
@@ -514,7 +516,7 @@ listen("app-update-progress", ({ payload: [done, total] }) => {
   setStatus($("#appStatus"), total ? `Загрузка: ${Math.round((done / total) * 100)}%` : `Загружено ${Math.round(done / 1024)} КБ`);
 });
 listen("app-update-available", ({ payload }) => {
-  toast(`Доступна новая версия приложения: ${payload.latest}. Установить можно в настройках.`, "info", 10000);
+  toast(`Доступна версия ${payload.latest}. Нажмите «Обновить» вверху окна.`, "info", 8000);
   setStatus($("#appStatus"), `Доступна версия ${payload.latest}`, "good");
   $("#appInstall").hidden = false;
 });
@@ -534,14 +536,15 @@ listen("settings-changed", ({ payload }) => {
   if (!state) return;
   const strategyChanged = state.settings.strategy !== payload.strategy;
   state.settings = payload;
-  applyAppearance(payload.theme);
+  applyAppearance(payload.theme, null, payload.animations);
   render();
   if (strategyChanged) loadCommandLine();
 });
 listen("toast", ({ payload }) => toast(payload, "err", 9000));
 
 // Конфликтующие процессы и состояние автозапуска могут поменяться извне.
-setInterval(() => { if (!document.hidden && !busy) refresh(); }, 5000);
+everyWhileVisible(5000, () => { if (!busy) refresh(); });
+onVisible(() => { if (!busy) refresh(); });
 
 /* ===================================================================== init */
 (async function init() {

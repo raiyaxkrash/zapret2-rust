@@ -8,7 +8,7 @@ let busy = false;
 async function refresh() {
   try {
     st = await invoke("get_state");
-    applyAppearance(st.settings.theme, st.platform);
+    applyAppearance(st.settings.theme, st.platform, st.settings.animations);
     if (!strategies.length) strategies = await invoke("get_strategies");
     render();
   } catch (e) { console.error(e); }
@@ -36,6 +36,7 @@ function render() {
   sel.disabled = st.testing;
 
   $$(".tile").forEach((t) => t.classList.toggle("on", !!s[t.dataset.key]));
+  renderUpdatePill(st.app_update);
 
   const warn = $("#warn");
   if (st.conflicts.length) {
@@ -90,9 +91,9 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") invoke("hi
 
 listen("flyout-shown", refresh);
 listen("engine-state", () => { if (!busy) refresh(); });
-listen("settings-changed", ({ payload }) => { if (st) { st.settings = payload; applyAppearance(payload.theme); render(); } });
+listen("settings-changed", ({ payload }) => { if (st) { st.settings = payload; applyAppearance(payload.theme, null, payload.animations); render(); } });
 listen("content-updated", async () => { strategies = await invoke("get_strategies"); render(); });
-setInterval(() => { if (!document.hidden) render(); }, 1000);
+everyWhileVisible(1000, render);
 
 hydrateIcons();
 refresh();

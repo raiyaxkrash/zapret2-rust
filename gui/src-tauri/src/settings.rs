@@ -35,6 +35,7 @@ pub struct Settings {
 
     /// "system" | "light" | "dark"
     pub theme: String,
+    pub animations: bool,
 
     pub custom_tls: String,
     pub custom_http: String,
@@ -62,6 +63,7 @@ impl Default for Settings {
             app_auto_check: true,
             app_update_url: DEFAULT_APP_UPDATE_URL.into(),
             theme: "system".into(),
+            animations: true,
             custom_tls: "--payload=tls_client_hello --lua-desync=fake:blob=tls_google:tcp_md5:repeats=6 --lua-desync=multisplit:pos=1,midsld".into(),
             custom_http: "--payload=http_req --lua-desync=fake:blob=fake_default_http:tcp_md5:repeats=6 --lua-desync=multisplit:pos=method+2".into(),
             custom_quic: "--payload=quic_initial --lua-desync=fake:blob=quic_google:repeats=6".into(),

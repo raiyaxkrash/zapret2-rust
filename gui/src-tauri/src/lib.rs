@@ -42,6 +42,8 @@ pub struct AppState {
     /// Когда мини-окно в трее скрылось из-за потери фокуса: щелчок по значку
     /// сначала снимает фокус, и без этой отметки окно тут же открылось бы снова.
     flyout_hidden_at: Mutex<Option<Instant>>,
+    /// Найденное обновление приложения (для значка в интерфейсе).
+    app_update: Mutex<Option<AppUpdateInfo>>,
 }
 
 type CmdResult<T> = Result<T, String>;
@@ -116,9 +118,18 @@ fn update_tray(app: &AppHandle) {
     }
 }
 
+/// Показывает или прячет окно и сообщает ему об этом: скрытое окно
+/// останавливает анимации и таймеры, чтобы не нагружать видеокарту и процессор.
+fn set_shown(app: &AppHandle, label: &str, shown: bool) {
+    if let Some(w) = app.get_webview_window(label) {
+        let _ = if shown { w.show() } else { w.hide() };
+        let _ = app.emit_to(label, "visibility", shown);
+    }
+}
+
 fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
-        let _ = w.show();
+        set_shown(app, "main", true);
         let _ = w.unminimize();
         let _ = w.set_focus();
     }
@@ -155,7 +166,7 @@ fn create_flyout(app: &AppHandle) -> tauri::Result<()> {
 fn toggle_flyout(app: &AppHandle, icon: Rect) {
     let Some(w) = app.get_webview_window("tray") else { return };
     if w.is_visible().unwrap_or(false) {
-        let _ = w.hide();
+        set_shown(&app, "tray", false);
         return;
     }
     let state = app.state::<AppState>();
@@ -180,7 +191,7 @@ fn toggle_flyout(app: &AppHandle, icon: Rect) {
         let y = if cy > ay + ah / 2.0 { ay + ah - fh - gap } else { ay + gap };
         let _ = w.set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32));
     }
-    let _ = w.show();
+    set_shown(app, "tray", true);
     let _ = w.set_focus();
     let _ = app.emit_to("tray", "flyout-shown", ());
 }
@@ -201,6 +212,7 @@ struct AppInfo {
     autostart: bool,
     content_version: u64,
     platform: platform::Platform,
+    app_update: Option<AppUpdateInfo>,
 }
 
 #[tauri::command]
@@ -218,15 +230,14 @@ fn get_state(app: AppHandle, state: State<'_, AppState>) -> AppInfo {
         auto_domains: paths::count_domains(&state.paths.auto_list()),
         autostart: autostart::is_enabled(),
         content_version: state.paths.content_version(),
+        app_update: state.app_update.lock().unwrap().clone(),
         platform: platform::info(),
     }
 }
 
 #[tauri::command]
 fn open_main(app: AppHandle, page: Option<String>) {
-    if let Some(w) = app.get_webview_window("tray") {
-        let _ = w.hide();
-    }
+    set_shown(&app, "tray", false);
     show_main(&app);
     if let Some(p) = page {
         let _ = app.emit_to("main", "navigate", p);
@@ -235,9 +246,7 @@ fn open_main(app: AppHandle, page: Option<String>) {
 
 #[tauri::command]
 fn hide_flyout(app: AppHandle) {
-    if let Some(w) = app.get_webview_window("tray") {
-        let _ = w.hide();
-    }
+    set_shown(&app, "tray", false);
 }
 
 #[tauri::command]
@@ -489,7 +498,7 @@ async fn find_app_update(app: &AppHandle) -> CmdResult<(AppUpdateInfo, Option<ta
         .build()
         .map_err(|e| e.to_string())?;
     let update = updater.check().await.map_err(|e| format!("Не удалось проверить обновления: {e}"))?;
-    Ok(match update {
+    let result = match update {
         Some(u) => (
             AppUpdateInfo {
                 configured: true,
@@ -501,7 +510,10 @@ async fn find_app_update(app: &AppHandle) -> CmdResult<(AppUpdateInfo, Option<ta
             Some(u),
         ),
         None => (AppUpdateInfo { configured: true, available: false, current: current.clone(), latest: current, notes: String::new() }, None),
-    })
+    };
+    // Запоминаем для значка «Доступно обновление» в интерфейсе.
+    *app.state::<AppState>().app_update.lock().unwrap() = result.0.available.then(|| result.0.clone());
+    Ok(result)
 }
 
 #[tauri::command]
@@ -557,6 +569,9 @@ fn spawn_background(app: AppHandle) {
             }
             if settings.app_auto_check && !settings.app_update_url.trim().is_empty() {
                 if let Ok((info, Some(_))) = find_app_update(&app).await {
+                    if let Some(tray) = app.tray_by_id("main") {
+                        let _ = tray.set_tooltip(Some(format!("Zapret2 — доступно обновление {}", info.latest)));
+                    }
                     let _ = app.emit("app-update-available", info);
                 }
             }
@@ -642,6 +657,7 @@ pub fn run() {
                 busy: tokio::sync::Mutex::new(()),
                 tray_toggle: Mutex::new(None),
                 flyout_hidden_at: Mutex::new(None),
+                app_update: Mutex::new(None),
             });
 
             platform::apply_theme(&handle, &settings.theme);
@@ -671,12 +687,12 @@ pub fn run() {
                     WindowEvent::Focused(false) => {
                         if window.is_visible().unwrap_or(false) {
                             *app.state::<AppState>().flyout_hidden_at.lock().unwrap() = Some(Instant::now());
-                            let _ = window.hide();
+                            set_shown(app, window.label(), false);
                         }
                     }
                     WindowEvent::CloseRequested { api, .. } => {
                         api.prevent_close();
-                        let _ = window.hide();
+                        set_shown(app, window.label(), false);
                     }
                     _ => {}
                 }
@@ -686,7 +702,7 @@ pub fn run() {
                 let to_tray = app.state::<AppState>().settings.lock().unwrap().close_to_tray;
                 if to_tray {
                     api.prevent_close();
-                    let _ = window.hide();
+                    set_shown(app, window.label(), false);
                 } else {
                     app.state::<AppState>().engine.stop(app);
                     app.exit(0);
