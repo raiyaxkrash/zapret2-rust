@@ -15,6 +15,57 @@ use tauri::{AppHandle, Emitter};
 
 use crate::util::{hidden_command, join_args, now_unix};
 
+/// Job Object с флагом KILL_ON_JOB_CLOSE: дескриптор живёт, пока жив наш процесс.
+/// Когда приложение завершается (в том числе аварийно), Windows закрывает
+/// дескриптор и завершает все процессы в задании — winws2 не остаётся висеть.
+mod job {
+    use std::{os::windows::io::AsRawHandle, process::Child, sync::OnceLock};
+
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, HANDLE},
+        System::JobObjects::{
+            AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject,
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        },
+    };
+
+    struct Job(HANDLE);
+    // Дескриптор задания можно использовать из любого потока.
+    unsafe impl Send for Job {}
+    unsafe impl Sync for Job {}
+
+    fn create() -> Option<Job> {
+        unsafe {
+            let h = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+            if h.is_null() {
+                return None;
+            }
+            let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            let ok = SetInformationJobObject(
+                h,
+                JobObjectExtendedLimitInformation,
+                &info as *const _ as *const core::ffi::c_void,
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            );
+            if ok == 0 {
+                CloseHandle(h);
+                return None;
+            }
+            Some(Job(h))
+        }
+    }
+
+    pub fn attach(child: &Child) {
+        static JOB: OnceLock<Option<Job>> = OnceLock::new();
+        if let Some(job) = JOB.get_or_init(create) {
+            unsafe {
+                AssignProcessToJobObject(job.0, child.as_raw_handle() as HANDLE);
+            }
+        }
+    }
+}
+
 const MAX_LOG: usize = 3000;
 /// Процессы, которые тоже используют WinDivert и мешают работе.
 const CONFLICTING: &[&str] = &["winws.exe", "winws2.exe", "goodbyedpi.exe"];
@@ -116,6 +167,8 @@ impl Engine {
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| format!("Не удалось запустить winws2: {e}"))?;
+        // Если наше приложение упадёт, Windows сама завершит winws2.
+        job::attach(&child);
 
         if let Some(out) = child.stdout.take() {
             self.spawn_reader(app.clone(), out);
@@ -163,6 +216,7 @@ impl Engine {
         let me = Arc::clone(self);
         thread::spawn(move || loop {
             thread::sleep(Duration::from_millis(400));
+            let mut crashed_after_work = false;
             let exited = {
                 let mut g = me.inner.lock().unwrap();
                 if g.generation != generation {
@@ -174,11 +228,15 @@ impl Engine {
                 };
                 match status {
                     Ok(Some(st)) => {
+                        let worked = g.since.map(|s| now_unix().saturating_sub(s)).unwrap_or(0);
                         g.child = None;
                         g.since = None;
                         if !g.stopping {
                             let msg = format!("winws2 неожиданно завершился (код {}). Подробности в журнале.", st.code().unwrap_or(-1));
                             g.last_error = Some(msg);
+                            // Падение сразу после запуска — это ошибка настроек, а не сбой:
+                            // такие случаи не перезапускаем.
+                            crashed_after_work = worked >= 10;
                         }
                         true
                     }
@@ -191,6 +249,9 @@ impl Engine {
                     me.log(&app, format!("[app] {e}"));
                 }
                 me.emit_state(&app);
+                if crashed_after_work {
+                    let _ = app.emit("engine-crashed", ());
+                }
                 return;
             }
         });

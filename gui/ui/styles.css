@@ -303,6 +303,34 @@ button.chip:hover { background: var(--glass-3); transform: translateY(-1px); }
 .infobar.error { background: var(--bad-bg); }
 .infobar.error > .ico { color: var(--bad); }
 
+/* ---------------------------------------------------------------- availability */
+.status-card { padding: 16px 18px; margin-top: 12px; }
+.status-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.status-items { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.status-items:empty { display: none; }
+.status-item {
+  display: inline-flex; align-items: center; gap: 9px; padding: 8px 14px; border-radius: 12px;
+  background: var(--glass); border: 1px solid var(--line); font-weight: 700; font-size: 13px;
+}
+.status-item .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-4); }
+.status-item.good .dot { background: var(--mint); box-shadow: 0 0 8px var(--mint); }
+.status-item.mid .dot { background: var(--amber); }
+.status-item.bad .dot { background: var(--rose); }
+.status-item .meta { color: var(--text-3); font-weight: 600; }
+.status-item.checking { color: var(--text-3); }
+.status-item.checking .dot { animation: blink 1s infinite; }
+
+.add-site {
+  display: flex; align-items: center; gap: 10px; margin: 12px 0 0; padding: 8px 8px 8px 16px;
+  border-radius: var(--r-lg); background: var(--glass); border: 1px solid var(--line);
+  transition: border-color .2s, box-shadow .2s;
+}
+.add-site:focus-within { border-color: var(--violet); box-shadow: 0 0 0 4px rgba(139, 92, 246, .16); }
+.add-site > .ico { color: var(--text-3); }
+.add-site input[type="text"] { flex: 1; border: 0; background: transparent; padding: 6px 0; box-shadow: none; font-weight: 600; }
+.add-site input[type="text"]:focus { border: 0; box-shadow: none; }
+.add-site + .tabs { margin-top: 14px; }
+
 /* ---------------------------------------------------------------- services */
 .services { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .services .setting { min-height: 82px; }

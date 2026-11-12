@@ -98,7 +98,12 @@ function render() {
   if (st.last_error && !running) {
     banners.push(`<div class="infobar error">${icon("alert")}<div>${esc(st.last_error)}</div><button class="btn" data-goto="logs">Журнал</button></div>`);
   }
+  if (showOnboarding()) {
+    banners.push(`<div class="infobar info">${icon("wand")}<div><b>Первый запуск?</b> У разных провайдеров работают разные стратегии. Подбор займёт около минуты и найдёт лучшую для YouTube и Discord.</div><button class="btn small primary" id="obStart">Подобрать</button><button class="btn small subtle" id="obHide">Скрыть</button></div>`);
+  }
   $("#banners").innerHTML = banners.join("");
+  $("#obStart")?.addEventListener("click", () => { hideOnboarding(); goto("strategies"); runTest(); });
+  $("#obHide")?.addEventListener("click", () => { hideOnboarding(); render(); });
   $("#killConflicts")?.addEventListener("click", killConflicts);
   $$("#banners [data-goto]").forEach((b) => b.addEventListener("click", () => goto(b.dataset.goto)));
 
@@ -132,6 +137,17 @@ function render() {
   renderStrategySelection();
 }
 
+/* Подсказка при первом запуске: пока стратегия не подбиралась и не менялась. */
+function showOnboarding() {
+  let hidden = false;
+  try { hidden = localStorage.getItem("z2.onboarded") === "1"; } catch {}
+  const s = state.settings;
+  return !hidden && !report && !testing && s.strategy === "fake_multisplit_md5" && !s.youtube_strategy;
+}
+function hideOnboarding() {
+  try { localStorage.setItem("z2.onboarded", "1"); } catch {}
+}
+
 function updateUptime() {
   const st = state?.status;
   const el = $("#heroUptime");
@@ -148,7 +164,11 @@ async function togglePower() {
   busy = true; render();
   try {
     if (state.status.running) await invoke("stop_engine");
-    else { await invoke("start_engine"); toast("Обход включён"); }
+    else {
+      await invoke("start_engine");
+      toast("Обход включён");
+      setTimeout(runQuickCheck, 1200);
+    }
   } catch (e) {
     toast(errText(e), "err", 9000);
   } finally {
@@ -191,6 +211,65 @@ async function killConflicts() {
   } catch (e) { toast(errText(e), "err"); }
   refresh();
 }
+
+/* ===================================================================== доступность сервисов */
+const SERVICE_NAMES = { youtube: "YouTube", discord: "Discord", custom: "Мои сайты" };
+let checking = false;
+
+function statusItem(name, cls, meta) {
+  return `<span class="status-item ${cls}"><span class="dot"></span>${esc(name)}${meta ? ` <span class="meta">${esc(meta)}</span>` : ""}</span>`;
+}
+
+async function runQuickCheck() {
+  if (checking || testing || !state) return;
+  checking = true;
+  const btn = $("#checkBtn");
+  btn.disabled = true;
+  const s = state.settings;
+  const pending = Object.keys(SERVICE_NAMES).filter((k) => s[k] || (k !== "custom" && !s.youtube && !s.discord));
+  $("#statusItems").innerHTML = pending.map((k) => statusItem(SERVICE_NAMES[k], "checking", "проверка…")).join("");
+  try {
+    const r = await invoke("quick_check");
+    const by = {};
+    for (const c of r.checks) (by[c.service] ||= []).push(c);
+    $("#statusItems").innerHTML = Object.entries(by).map(([svc, list]) => {
+      const ok = list.filter((c) => c.ok);
+      const cls = ok.length === list.length ? "good" : ok.length ? "mid" : "bad";
+      const ms = ok.length ? Math.round(ok.reduce((a, c) => a + c.ms, 0) / ok.length) : 0;
+      const meta = cls === "bad" ? "не открывается" : `${ok.length}/${list.length} · ${ms} мс`;
+      return statusItem(SERVICE_NAMES[svc] || svc, cls, meta);
+    }).join("");
+    $("#checkTime").textContent = `Проверено в ${new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}${state.status.running ? "" : " · обход выключен"}`;
+  } catch (e) {
+    $("#statusItems").innerHTML = "";
+    toast(errText(e), "err");
+  } finally {
+    checking = false;
+    btn.disabled = false;
+  }
+}
+$("#checkBtn").addEventListener("click", runQuickCheck);
+
+/* ===================================================================== быстрое добавление сайта */
+$$(".add-site").forEach((form) => form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const input = $("input", form);
+  const value = input.value.trim();
+  if (!value) return;
+  const btn = $("button", form);
+  btn.disabled = true;
+  try {
+    const msg = await invoke("add_domain", { input: value, list: form.dataset.list });
+    toast(msg);
+    input.value = "";
+    if (currentList === form.dataset.list && $("#page-lists").classList.contains("active")) loadList(currentList);
+    await refresh();
+  } catch (err) {
+    toast(errText(err), "err");
+  } finally {
+    btn.disabled = false;
+  }
+}));
 
 /* ===================================================================== strategies */
 function resultFor(id) {

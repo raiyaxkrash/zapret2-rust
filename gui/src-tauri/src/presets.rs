@@ -212,3 +212,100 @@ pub fn build_args(settings: &Settings, presets: &Presets, strategy: &Strategy, y
     }
     Ok(args)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn s(id: &str) -> Strategy {
+        Strategy {
+            id: id.into(),
+            name: id.into(),
+            description: String::new(),
+            tls: vec![format!("--lua-desync=tls_{id}")],
+            http: vec![format!("--lua-desync=http_{id}")],
+            quic: None,
+        }
+    }
+
+    fn setup(user_list: &str) -> (Paths, Presets) {
+        let root = std::env::temp_dir().join(format!("z2gui-test-{}-{}", std::process::id(), user_list.len()));
+        let _ = fs::create_dir_all(root.join("lists"));
+        fs::write(root.join("lists").join("user.txt"), user_list).unwrap();
+        let paths = Paths {
+            engine: root.join("engine"),
+            lists: root.join("lists"),
+            low: root.join("low"),
+            resources: PathBuf::from("."),
+            remote: root.join("remote"),
+            root,
+        };
+        let presets = Presets {
+            quic_default: vec!["--lua-desync=quic_default".into()],
+            discord_voice: vec!["--lua-desync=voice".into()],
+            strategies: vec![s("main"), s("yt")],
+        };
+        (paths, presets)
+    }
+
+    fn base() -> Settings {
+        Settings { youtube: true, discord: true, discord_voice: false, custom: false, quic: true, ..Settings::default() }
+    }
+
+    /// Профили между `--new`.
+    fn profiles(args: &[String]) -> Vec<Vec<String>> {
+        let start = args.iter().position(|a| a.starts_with("--filter-")).unwrap();
+        args[start..].split(|a| a == "--new").map(|p| p.to_vec()).collect()
+    }
+
+    #[test]
+    fn youtube_gets_own_strategy() {
+        let (paths, presets) = setup("");
+        let args = build_args(&base(), &presets, &s("main"), &s("yt"), &paths).unwrap();
+        let p = profiles(&args);
+        let yt_tcp = p.iter().find(|p| p.contains(&"--hostlist=lists/youtube.txt".into()) && p[0].starts_with("--filter-tcp")).unwrap();
+        let dc_tcp = p.iter().find(|p| p.contains(&"--hostlist=lists/discord.txt".into()) && p[0].starts_with("--filter-tcp")).unwrap();
+        assert!(yt_tcp.contains(&"--lua-desync=tls_yt".into()));
+        assert!(dc_tcp.contains(&"--lua-desync=tls_main".into()));
+        assert!(args.contains(&"--wf-tcp-out=80,443,2053,2083,2087,2096,8443".into()));
+    }
+
+    #[test]
+    fn quic_off_blocks_quic() {
+        let (paths, presets) = setup("");
+        let settings = Settings { quic: false, ..base() };
+        let args = build_args(&settings, &presets, &s("main"), &s("main"), &paths).unwrap();
+        let quic: Vec<_> = profiles(&args).into_iter().filter(|p| p[0] == "--filter-udp=443").collect();
+        assert_eq!(quic.len(), 2);
+        assert!(quic.iter().all(|p| p.last() == Some(&"--lua-desync=drop".to_string())));
+        assert!(args.contains(&"--wf-udp-out=443".into()));
+    }
+
+    #[test]
+    fn empty_user_list_is_not_all_sites() {
+        // Пустой хостлист в zapret означает «все сайты», поэтому такой профиль добавлять нельзя.
+        let (paths, presets) = setup("# только комментарий\n");
+        let settings = Settings { youtube: false, discord: false, custom: true, custom_mode: "list".into(), ..base() };
+        assert!(build_args(&settings, &presets, &s("main"), &s("main"), &paths).is_err());
+    }
+
+    #[test]
+    fn user_list_profile() {
+        let (paths, presets) = setup("rutracker.org\n");
+        let settings = Settings { youtube: false, discord: false, custom: true, custom_mode: "list".into(), ..base() };
+        let args = build_args(&settings, &presets, &s("main"), &s("main"), &paths).unwrap();
+        assert!(args.contains(&"--hostlist=lists/user.txt".into()));
+        assert!(args.contains(&"--hostlist-exclude=lists/exclude.txt".into()));
+    }
+
+    #[test]
+    fn voice_uses_raw_filters() {
+        let (paths, presets) = setup("");
+        let settings = Settings { youtube: false, discord: false, discord_voice: true, ..base() };
+        let args = build_args(&settings, &presets, &s("main"), &s("main"), &paths).unwrap();
+        assert!(args.iter().any(|a| a.contains("windivert_part.discord_media.txt")));
+        assert!(args.contains(&"--filter-l7=discord,stun".into()));
+        assert!(!args.iter().any(|a| a.starts_with("--wf-tcp-out")));
+    }
+}

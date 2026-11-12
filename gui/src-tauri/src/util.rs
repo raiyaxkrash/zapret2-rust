@@ -73,6 +73,38 @@ pub fn join_args(args: &[String]) -> String {
         .join(" ")
 }
 
+/// Превращает ввод пользователя («https://www.site.com/page?x», «Site.com:443») в домен для хостлиста.
+pub fn normalize_domain(input: &str) -> Result<String, String> {
+    let mut s = input.trim().to_lowercase();
+    for scheme in ["https://", "http://"] {
+        if let Some(rest) = s.strip_prefix(scheme) {
+            s = rest.to_string();
+        }
+    }
+    if let Some(i) = s.find(['/', '?', '#']) {
+        s.truncate(i);
+    }
+    if let Some(i) = s.rfind(':') {
+        s.truncate(i);
+    }
+    let s = s.trim_start_matches("*.").trim_start_matches("www.").trim_end_matches('.').to_string();
+    if s.is_empty() {
+        return Err("Введите адрес сайта".into());
+    }
+    if !s.is_ascii() {
+        return Err("Введите домен латиницей. Для доменов .рф используйте punycode (xn--…)".into());
+    }
+    let valid = s.contains('.')
+        && !s.starts_with('.')
+        && !s.contains("..")
+        && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.')
+        && s.split('.').all(|label| !label.is_empty() && !label.starts_with('-') && !label.ends_with('-'));
+    if !valid {
+        return Err(format!("«{}» не похоже на адрес сайта", input.trim()));
+    }
+    Ok(s)
+}
+
 pub fn now_unix() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -90,6 +122,19 @@ mod tests {
         assert!(version_cmp("v1.0.5.1", "1.0.5").is_gt());
         assert!(version_cmp("1.0.7", "v1.0.7").is_eq());
         assert!(version_cmp("1.0.10", "1.0.9").is_gt());
+    }
+
+    #[test]
+    fn domains() {
+        assert_eq!(normalize_domain("https://www.Example.com/watch?v=1").unwrap(), "example.com");
+        assert_eq!(normalize_domain("  rutracker.org:443 ").unwrap(), "rutracker.org");
+        assert_eq!(normalize_domain("*.cdn.site.net").unwrap(), "cdn.site.net");
+        assert_eq!(normalize_domain("sub.domain.co.uk.").unwrap(), "sub.domain.co.uk");
+        assert!(normalize_domain("").is_err());
+        assert!(normalize_domain("localhost").is_err());
+        assert!(normalize_domain("bad..com").is_err());
+        assert!(normalize_domain("-x.com").is_err());
+        assert!(normalize_domain("сайт.рф").is_err());
     }
 
     #[test]

@@ -1,5 +1,5 @@
 # Сборка Zapret2 GUI и публикация релиза с файлом latest.json для автообновления.
-# Запуск: создайте тег вида v1.0.1 (версия должна совпадать с gui/src-tauri/tauri.conf.json) и отправьте его на GitHub.
+# Запуск: поднимите версию скриптом gui/scripts/bump-version.ps1 и отправьте тег vX.Y.Z на GitHub.
 # Нужен секрет репозитория TAURI_SIGNING_PRIVATE_KEY с содержимым gui/.keys/zapret2gui.key.
 name: release
 
@@ -15,17 +15,31 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - name: Tag matches app version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $v = (Get-Content gui/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ("v$v" -ne "${{ github.ref_name }}") {
+            Write-Error "Тег ${{ github.ref_name }} не совпадает с версией в tauri.conf.json ($v)"
+            exit 1
+          }
+
+      - uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: 24
 
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: gui/src-tauri
+
+      - name: Unit tests
+        working-directory: gui/src-tauri
+        run: cargo test --lib
 
       - name: Install Tauri CLI
         working-directory: gui

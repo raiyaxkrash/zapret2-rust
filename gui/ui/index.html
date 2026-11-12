@@ -57,6 +57,23 @@
             </div>
           </div>
 
+          <div class="card status-card">
+            <div class="status-head">
+              <div>
+                <div class="setting-title">Доступность</div>
+                <div class="setting-desc" id="checkTime">Проверьте, открываются ли сервисы прямо сейчас</div>
+              </div>
+              <button class="btn small" id="checkBtn"><span data-icon="refresh"></span>Проверить</button>
+            </div>
+            <div class="status-items" id="statusItems"></div>
+          </div>
+
+          <form class="add-site" data-list="user">
+            <span data-icon="globe"></span>
+            <input type="text" placeholder="Не открывается сайт? Вставьте ссылку или домен и нажмите Enter" spellcheck="false" />
+            <button class="btn small primary" type="submit">Добавить</button>
+          </form>
+
           <h2 class="section-title">Что обходить</h2>
           <div class="services">
             <label class="setting" data-key="youtube">
@@ -155,6 +172,11 @@
               <button class="btn" id="openListsDir"><span data-icon="folder"></span>Открыть папку</button>
             </div>
           </div>
+          <form class="add-site" data-list="user" style="margin-top:0">
+            <span data-icon="globe"></span>
+            <input type="text" placeholder="Добавить в «Мои сайты»: вставьте ссылку или домен" spellcheck="false" />
+            <button class="btn small primary" type="submit">Добавить</button>
+          </form>
           <div class="tabs" id="listTabs">
             <button class="tab active" data-list="user">Мои сайты</button>
             <button class="tab" data-list="exclude">Исключения</button>

@@ -198,6 +198,11 @@ function mockInvoke(cmd, args) {
     case "check_content_update": return wait(400).then(() => ({ current: 1, latest: 1, available: false }));
     case "update_content": return wait(400).then(() => "Стратегии и списки актуальны (версия 1)");
     case "get_last_report": return Promise.resolve(null);
+    case "quick_check": return wait(900).then(() => ({ id: "now", checks: [
+      { service: "youtube", ok: true, ms: 320 }, { service: "youtube", ok: true, ms: 410 }, { service: "youtube", ok: false, ms: 0 },
+      { service: "discord", ok: true, ms: 180 }, { service: "discord", ok: true, ms: 220 },
+    ] }));
+    case "add_domain": return wait(300).then(() => `${args.input.replace(/^https?:\/\/(www\.)?/, "").split("/")[0]} добавлен`);
     default: return Promise.resolve(null);
   }
 }

@@ -19,7 +19,7 @@ use serde::Serialize;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager, PhysicalPosition, Rect, State, WebviewUrl, WebviewWindowBuilder, WindowEvent, Wry,
+    AppHandle, Emitter, Listener, Manager, PhysicalPosition, Rect, State, WebviewUrl, WebviewWindowBuilder, WindowEvent, Wry,
 };
 use tauri_plugin_updater::UpdaterExt;
 
@@ -114,8 +114,71 @@ fn update_tray(app: &AppHandle) {
         let _ = item.set_text(if running { "Выключить обход" } else { "Включить обход" });
     }
     if let Some(tray) = app.tray_by_id("main") {
-        let _ = tray.set_tooltip(Some(if running { "Zapret2 — обход включён" } else { "Zapret2 — обход выключен" }));
+        let update = state.app_update.lock().unwrap().as_ref().map(|u| u.latest.clone());
+        let mut tip = String::from(if running { "Zapret2 — обход включён" } else { "Zapret2 — обход выключен" });
+        if let Some(v) = update {
+            tip.push_str(&format!("\nДоступно обновление {v}"));
+        }
+        let _ = tray.set_tooltip(Some(tip));
+        if let Some(icon) = tray_icon(app, running) {
+            let _ = tray.set_icon(Some(icon));
+        }
     }
+}
+
+/// Значок в трее: цветной, когда обход включён, и серый полупрозрачный, когда выключен.
+fn tray_icon(app: &AppHandle, running: bool) -> Option<tauri::image::Image<'static>> {
+    static OFF: std::sync::OnceLock<Option<(Vec<u8>, u32, u32)>> = std::sync::OnceLock::new();
+    let base = app.default_window_icon()?;
+    if running {
+        return Some(base.clone().to_owned());
+    }
+    let (rgba, w, h) = OFF
+        .get_or_init(|| {
+            let mut px = base.rgba().to_vec();
+            for p in px.chunks_exact_mut(4) {
+                let y = (0.299 * p[0] as f32 + 0.587 * p[1] as f32 + 0.114 * p[2] as f32) as u8;
+                // Светло-серый, чтобы значок был виден и на тёмной, и на светлой панели задач.
+                let g = 96 + y / 2;
+                p[0] = g;
+                p[1] = g;
+                p[2] = g;
+                p[3] = (p[3] as u16 * 200 / 255) as u8;
+            }
+            Some((px, base.width(), base.height()))
+        })
+        .clone()?;
+    Some(tauri::image::Image::new_owned(rgba, w, h))
+}
+
+/// Автоперезапуск winws2, если он упал во время работы (не сразу после запуска).
+/// Не больше трёх попыток за 5 минут, чтобы не крутиться в цикле.
+fn on_engine_crash(app: AppHandle) {
+    static CRASHES: Mutex<Vec<Instant>> = Mutex::new(Vec::new());
+    let allowed = {
+        let mut c = CRASHES.lock().unwrap();
+        c.retain(|t| t.elapsed() < Duration::from_secs(300));
+        c.push(Instant::now());
+        c.len() <= 3
+    };
+    tauri::async_runtime::spawn(async move {
+        let state = app.state::<AppState>();
+        if !allowed {
+            state.engine.log(&app, "[app] winws2 падает слишком часто, автоперезапуск остановлен");
+            let _ = app.emit("toast", "winws2 несколько раз неожиданно завершился. Обход выключен, подробности в журнале.");
+            return;
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let _guard = state.busy.lock().await;
+        if state.engine.is_running() || state.testing.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
+        state.engine.log(&app, "[app] winws2 неожиданно завершился, перезапуск…");
+        match start_current(&app).await {
+            Ok(()) => state.engine.log(&app, "[app] Обход снова работает"),
+            Err(e) => state.engine.log(&app, format!("[app] Перезапуск не удался: {e}")),
+        }
+    });
 }
 
 /// Показывает или прячет окно и сообщает ему об этом: скрытое окно
@@ -372,6 +435,57 @@ async fn write_list(app: AppHandle, name: String, content: String) -> CmdResult<
     restart_if_running(&app).await
 }
 
+/// Добавляет сайт в «Мои сайты» (или в исключения). Принимает и домен, и ссылку целиком.
+#[tauri::command]
+async fn add_domain(app: AppHandle, input: String, list: Option<String>) -> CmdResult<String> {
+    let state = app.state::<AppState>();
+    let list = list.unwrap_or_else(|| "user".into());
+    if !paths::USER_LISTS.contains(&list.as_str()) {
+        return Err("Неизвестный список".into());
+    }
+    let domain = util::normalize_domain(&input)?;
+    let p = state.paths.list_file(&list).ok_or("Неизвестный список")?;
+    let text = fs::read_to_string(&p).unwrap_or_default();
+    if text.lines().any(|l| l.trim().eq_ignore_ascii_case(&domain)) {
+        return Ok(format!("{domain} уже есть в списке"));
+    }
+    let mut new_text = text;
+    if !new_text.is_empty() && !new_text.ends_with('\n') {
+        new_text.push('\n');
+    }
+    new_text.push_str(&domain);
+    new_text.push('\n');
+    fs::write(&p, new_text).map_err(|e| format!("Не удалось сохранить список: {e}"))?;
+
+    let _guard = state.busy.lock().await;
+    let mut msg = format!("{domain} добавлен");
+    // Чтобы сайт сразу заработал, включаем сервис «Мои сайты».
+    if list == "user" {
+        let mut s = state.settings.lock().unwrap().clone();
+        if !s.custom {
+            s.custom = true;
+            s.save(&state.paths.settings_file())?;
+            *state.settings.lock().unwrap() = s.clone();
+            let _ = app.emit("settings-changed", s);
+            msg.push_str(", сервис «Мои сайты» включён");
+        }
+    }
+    restart_if_running(&app).await?;
+    Ok(msg)
+}
+
+/// Быстрая проверка доступности сервисов с текущими настройками (без перезапуска обхода).
+#[tauri::command]
+async fn quick_check(app: AppHandle) -> CmdResult<tester::StrategyResult> {
+    let state = app.state::<AppState>();
+    if state.testing.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err("Идёт подбор стратегии".into());
+    }
+    let settings = state.settings.lock().unwrap().clone();
+    let urls = tester::targets(&settings, &state);
+    Ok(tester::run_checks("now", "Сейчас", &urls).await)
+}
+
 #[tauri::command]
 fn get_logs(state: State<'_, AppState>) -> Vec<String> {
     state.engine.logs()
@@ -569,9 +683,7 @@ fn spawn_background(app: AppHandle) {
             }
             if settings.app_auto_check && !settings.app_update_url.trim().is_empty() {
                 if let Ok((info, Some(_))) = find_app_update(&app).await {
-                    if let Some(tray) = app.tray_by_id("main") {
-                        let _ = tray.set_tooltip(Some(format!("Zapret2 — доступно обновление {}", info.latest)));
-                    }
+                    update_tray(&app);
                     let _ = app.emit("app-update-available", info);
                 }
             }
@@ -663,6 +775,13 @@ pub fn run() {
             platform::apply_theme(&handle, &settings.theme);
             create_flyout(&handle)?;
             build_tray(&handle)?;
+            update_tray(&handle);
+            {
+                let h = handle.clone();
+                handle.listen_any("engine-state", move |_| update_tray(&h));
+                let h = handle.clone();
+                handle.listen_any("engine-crashed", move |_| on_engine_crash(h.clone()));
+            }
 
             if !(autostarted && settings.start_minimized) {
                 show_main(&handle);
@@ -732,6 +851,8 @@ pub fn run() {
             install_app_update,
             open_main,
             hide_flyout,
+            add_domain,
+            quick_check,
             quit_app,
             check_content_update,
             update_content,

@@ -157,7 +157,7 @@ fn summarize(id: &str, name: &str, checks: Vec<CheckResult>, total: usize, error
     }
 }
 
-async fn run_checks(id: &str, name: &str, urls: &[(String, String)]) -> StrategyResult {
+pub async fn run_checks(id: &str, name: &str, urls: &[(String, String)]) -> StrategyResult {
     let handles: Vec<_> = urls
         .iter()
         .cloned()
