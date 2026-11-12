@@ -204,6 +204,14 @@ function mockInvoke(cmd, args) {
     case "start_engine": return wait(900).then(() => { m.running = true; m.since = Math.floor(Date.now() / 1000); });
     case "stop_engine": return wait(200).then(() => { m.running = false; });
     case "get_strategies": return Promise.resolve(strategies);
+    case "net_traffic": {
+      // Демо: плавно меняющаяся скорость около 2–6 МБ/с.
+      const t = (window.__traf ||= { rx: 1e9, tx: 1e8, n: 0 });
+      t.n++;
+      t.rx += (2 + 2 * Math.sin(t.n / 7) + Math.random()) * 1048576 * 2;
+      t.tx += (0.2 + 0.1 * Math.sin(t.n / 5)) * 1048576 * 2;
+      return Promise.resolve({ rx: Math.round(t.rx), tx: Math.round(t.tx) });
+    }
     case "get_isp": return wait(300).then(() => ({ isp: { asn: 12389, name: "PJSC Rostelecom" }, hint: { asn: [12389], name: "Ростелеком", strategy: "seqovl", youtube_strategy: "" } }));
     case "save_settings": m.settings = args.new; return Promise.resolve(m.settings);
     case "get_command_line": return Promise.resolve("engine\\bin\\winws2.exe --wf-tcp-out=80,443 ...");

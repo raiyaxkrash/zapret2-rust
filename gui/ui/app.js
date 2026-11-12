@@ -77,7 +77,7 @@ function render() {
   $("#heroState").textContent = testing ? "Идёт подбор стратегии" : busy ? (running ? "Перезапуск…" : "Запуск…") : running ? "Обход включён" : "Обход выключен";
   $("#heroSub").textContent = testing
     ? "Дождитесь окончания проверки на странице «Стратегии»"
-    : running ? "Заблокированные сервисы должны открываться" : "Нажмите кнопку, чтобы включить";
+    : running ? "Заблокированные сервисы должны открываться" : "Нажмите на сферу, чтобы включить";
   $("#heroStrategyName").textContent = strat ? strat.name : s.strategy;
   const ytStrat = s.youtube_strategy ? strategies.find((x) => x.id === s.youtube_strategy) : null;
   $("#heroYt").hidden = !ytStrat || !s.youtube;
@@ -278,6 +278,8 @@ function renderPacks() {
   const box = $("#packs");
   if (!box || !state) return;
   const on = new Set(state.settings.packs || []);
+  const enabled = packs.filter((p) => on.has(p.id)).length;
+  $("#packsCount").textContent = enabled ? ` · включено ${enabled}` : "";
   box.innerHTML = packs.map((p) => `
     <button class="pack ${on.has(p.id) ? "on" : ""}" data-id="${esc(p.id)}" title="${esc(p.description)}">
       <div class="pack-top"><span class="pack-ico">${icon(p.icon || "globe")}</span><span class="pack-check">${icon("tick")}</span></div>
@@ -310,6 +312,8 @@ function renderTgProxy() {
     : tg.running ? "Нажмите «Подключить» и подтвердите в Telegram. Это нужно сделать один раз."
     : "Запуск…";
   $("#tgHint").classList.toggle("err", !!failed);
+  $("#tgHomeDesc").textContent = !on ? "Для приложения Telegram"
+    : tg.running ? `Работает · 127.0.0.1:${tg.port}` : failed ? "Ошибка, подробнее в разделе Telegram" : "Запуск…";
   $("#tgDesc").textContent = !tg.available ? "Не входит в эту сборку приложения"
     : !on ? "Приложение Telegram подключится через WebSocket, без настройки обхода"
     : tg.running ? `Работает на 127.0.0.1:${tg.port}`
@@ -561,6 +565,64 @@ function finishTest() {
     loadCommandLine();
   });
 }
+
+/* ===================================================================== график трафика */
+const TRAFFIC_POINTS = 300; // 10 минут по 2 секунды
+const trafRx = [], trafTx = [];
+let trafLast = null;
+
+function fmtRate(bps) {
+  if (bps >= 1048576) return `${(bps / 1048576).toFixed(1).replace(".", ",")} МБ/с`;
+  if (bps >= 1024) return `${Math.round(bps / 1024)} КБ/с`;
+  return `${Math.round(bps)} Б/с`;
+}
+
+/* Плавная линия через точки (кривые Безье по средним точкам). */
+function smoothPath(pts) {
+  if (!pts.length) return "";
+  let d = `M${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+  for (let i = 1; i < pts.length; i++) {
+    const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
+    const mx = (x0 + x1) / 2;
+    d += ` C${mx.toFixed(1)} ${y0.toFixed(1)} ${mx.toFixed(1)} ${y1.toFixed(1)} ${x1.toFixed(1)} ${y1.toFixed(1)}`;
+  }
+  return d;
+}
+
+function drawTraffic() {
+  const W = 600, H = 140, top = 12;
+  // Сглаживание для спокойной линии: трафик рывками, а график не должен дёргаться.
+  const ema = (arr) => { let v = arr[0] || 0; return arr.map((x) => (v = v + (x - v) * 0.35)); };
+  const sRx = ema(trafRx), sTx = ema(trafTx);
+  const max = Math.max(64 * 1024, ...sRx, ...sTx) * 1.15;
+  const toPts = (arr) => arr.map((v, i) => [W - (arr.length - 1 - i) * (W / (TRAFFIC_POINTS - 1)), H - (v / max) * (H - top)]);
+  const rx = toPts(sRx), tx = toPts(sTx);
+  const rxPath = smoothPath(rx);
+  $("#trafRxLine").setAttribute("d", rxPath);
+  $("#trafTxLine").setAttribute("d", smoothPath(tx));
+  $("#trafFill").setAttribute("d", rx.length ? `${rxPath} L${W} ${H} L${rx[0][0].toFixed(1)} ${H} Z` : "");
+  $("#trafRx").textContent = trafRx.length ? fmtRate(trafRx[trafRx.length - 1]) : "—";
+  $("#trafTx").textContent = trafTx.length ? fmtRate(trafTx[trafTx.length - 1]) : "—";
+}
+
+async function sampleTraffic() {
+  let t;
+  try { t = await invoke("net_traffic"); } catch { return; }
+  const now = performance.now();
+  if (trafLast && now > trafLast.at) {
+    const sec = (now - trafLast.at) / 1000;
+    // Пропуск после сна или скрытого окна: не рисуем один огромный всплеск.
+    if (sec < 10) {
+      trafRx.push(Math.max(0, (t.rx - trafLast.rx) / sec));
+      trafTx.push(Math.max(0, (t.tx - trafLast.tx) / sec));
+      if (trafRx.length > TRAFFIC_POINTS) { trafRx.shift(); trafTx.shift(); }
+      drawTraffic();
+    }
+  }
+  trafLast = { rx: t.rx, tx: t.tx, at: now };
+}
+everyWhileVisible(2000, sampleTraffic);
+onVisible(() => { trafLast = null; });
 
 /* ===================================================================== мастер первого запуска */
 const WIZ_CHOICES = [
@@ -911,6 +973,7 @@ onVisible(() => { if (!busy) refresh(); });
   await loadStrategies();
   await loadPacks();
   try { (await invoke("get_logs")).forEach((l) => logLine(l, false)); } catch {}
+  sampleTraffic();
   if (state?.testing) { testing = true; render(); }
   if (TAURI && state && showOnboarding()) openWizard();
   // Демо-режим для скриншотов (только в браузере, без Tauri).
@@ -920,6 +983,11 @@ onVisible(() => { if (!busy) refresh(); });
     render();
     if (demo.get("page")) goto(demo.get("page"));
     if (demo.get("wizard")) openWizard();
+    for (let i = 0; i < 180; i++) {
+      trafRx.push((2.4 + 1.8 * Math.sin(i / 14) + 0.6 * Math.sin(i / 5.3) + Math.random() * 0.3) * 1048576);
+      trafTx.push((0.25 + 0.12 * Math.sin(i / 6)) * 1048576);
+    }
+    drawTraffic();
     if (demo.get("page") === "strategies") runTest();
     else runQuickCheck();
     if (demo.get("scroll")) setTimeout(() => { $(".content").scrollTop = +demo.get("scroll"); }, 300);

@@ -8,6 +8,7 @@ mod presets;
 mod settings;
 mod tester;
 mod tgproxy;
+mod traffic;
 mod util;
 mod zapret_update;
 
@@ -248,7 +249,7 @@ fn create_flyout(app: &AppHandle) -> tauri::Result<()> {
         .resizable(false)
         .decorations(false)
         .shadow(true)
-        .background_color(tauri::window::Color(11, 10, 20, 255))
+        .background_color(tauri::window::Color(10, 10, 10, 255))
         .skip_taskbar(true)
         .always_on_top(true)
         .visible(false)
@@ -647,6 +648,12 @@ fn tg_proxy_open(state: State<'_, AppState>) -> CmdResult<()> {
     Ok(())
 }
 
+/// Суммарные счётчики трафика физических адаптеров (для графика на главной).
+#[tauri::command]
+fn net_traffic() -> traffic::Totals {
+    traffic::totals()
+}
+
 // ---------------------------------------------------------------- провайдер
 
 #[derive(Serialize)]
@@ -1013,6 +1020,7 @@ pub fn run() {
             tg_proxy_start,
             tg_proxy_open,
             get_isp,
+            net_traffic,
             share_isp_result,
         ])
         .build(tauri::generate_context!())
