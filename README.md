@@ -76,6 +76,8 @@
 > Антивирусы иногда ошибочно считают драйвер WinDivert опасным. Это драйвер перехвата сетевых пакетов, а не вирус. Если обход не включается, проверьте карантин антивируса.
 >
 > Установщик собирается автоматически на GitHub Actions из открытого исходного кода этого репозитория: журнал каждой сборки можно посмотреть на вкладке [Actions](https://github.com/raiyaxkrash/zapret2-rust/actions).
+>
+> [Проверка версии 2.0.0 на VirusTotal](https://www.virustotal.com/gui/file/a7f73e997a1ea0374df15f16ac98f4400e6b81aabc377842ca2f31cc8728e76f): 14 из 65 антивирусов реагируют на драйвер WinDivert (метки `pua.windivert`, `RiskTool.WinDivert`) или срабатывают по общим эвристикам. Microsoft Defender, ESET, Dr.Web, BitDefender и Malwarebytes угроз не находят. Так же антивирусы относятся к GoodbyeDPI и сборкам zapret: все они используют этот драйвер.
 
 ## Вопросы и ответы
 

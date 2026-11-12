@@ -44,7 +44,7 @@ A simple desktop app for [zapret2](https://github.com/bol-van/zapret2) (DPI circ
 2. Run the installer and allow administrator rights (required to load the WinDivert driver).
 3. The setup wizard opens on first launch: tick what doesn't work and press «Настроить» (Set up).
 
-Antivirus software sometimes flags the WinDivert driver: it is a packet interception driver, not malware. Installers are built by GitHub Actions from the open source code in this repository — see the [Actions](https://github.com/raiyaxkrash/zapret2-rust/actions) tab for every build log.
+Antivirus software sometimes flags the WinDivert driver: it is a packet interception driver, not malware. Installers are built by GitHub Actions from the open source code in this repository — see the [Actions](https://github.com/raiyaxkrash/zapret2-rust/actions) tab for every build log. [VirusTotal scan of 2.0.0](https://www.virustotal.com/gui/file/a7f73e997a1ea0374df15f16ac98f4400e6b81aabc377842ca2f31cc8728e76f): 14 of 65 engines react to the WinDivert driver (`pua.windivert`, `RiskTool.WinDivert`) or generic heuristics; Microsoft Defender, ESET, Dr.Web, BitDefender and Malwarebytes report it clean.
 
 ## Credits and license
 
