@@ -5509,7 +5509,7 @@ dependencies = [
 
 [[package]]
 name = "zapret2-gui"
-version = "1.3.0"
+version = "1.4.0"
 dependencies = [
  "hex",
  "reqwest 0.12.28",

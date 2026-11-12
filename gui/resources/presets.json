@@ -1,5 +1,14 @@
 {
-  "version": 2,
+  "version": 3,
+  "packs": [
+    { "id": "telegram", "name": "Telegram", "icon": "send", "description": "Сайт, веб-версия, ссылки t.me. Само приложение использует свой протокол: если оно не подключается, включите в нём прокси" },
+    { "id": "meta", "name": "Instagram и Facebook", "icon": "camera", "description": "Instagram, Facebook, WhatsApp, Threads" },
+    { "id": "x", "name": "X (Twitter)", "icon": "hash", "description": "x.com, twitter.com, картинки и видео" },
+    { "id": "torrents", "name": "Торрент-трекеры", "icon": "download", "description": "RuTracker, Rutor, NNM-Club, Kinozal и другие" },
+    { "id": "roblox", "name": "Roblox", "icon": "gamepad", "description": "Сайт и игровые серверы Roblox" },
+    { "id": "signal", "name": "Signal", "icon": "chat", "description": "Мессенджер Signal" },
+    { "id": "linkedin", "name": "LinkedIn", "icon": "briefcase", "description": "Сайт и картинки LinkedIn" }
+  ],
   "quic_default": [
     "--payload=quic_initial",
     "--lua-desync=fake:blob=quic_google:repeats=6"

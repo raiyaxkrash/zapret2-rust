@@ -98,10 +98,15 @@ function render() {
   if (st.last_error && !running) {
     banners.push(`<div class="infobar error">${icon("alert")}<div>${esc(st.last_error)}</div><button class="btn" data-goto="logs">Журнал</button></div>`);
   }
+  const pf = state.platform;
+  if (pf?.arm64 && !pf.testsigning) {
+    banners.push(`<div class="infobar warn">${icon("chip")}<div><b>Компьютер на ARM64.</b> Для ARM64 нет подписанного драйвера WinDivert, поэтому Windows загрузит его только в режиме тестовой подписи. ${pf.secure_boot ? "Сначала выключите Secure Boot в настройках UEFI/BIOS, затем включите тестовый режим здесь." : "Включите тестовый режим и перезагрузите компьютер."}</div><button class="btn small" id="armTs"${pf.secure_boot ? " disabled" : ""}>Включить тестовый режим</button></div>`);
+  }
   if (showOnboarding()) {
     banners.push(`<div class="infobar info">${icon("wand")}<div><b>Первый запуск?</b> У разных провайдеров работают разные стратегии. Подбор займёт около минуты и найдёт лучшую для YouTube и Discord.</div><button class="btn small primary" id="obStart">Подобрать</button><button class="btn small subtle" id="obHide">Скрыть</button></div>`);
   }
   $("#banners").innerHTML = banners.join("");
+  $("#armTs")?.addEventListener("click", enableTestsigning);
   $("#obStart")?.addEventListener("click", () => { hideOnboarding(); goto("strategies"); runTest(); });
   $("#obHide")?.addEventListener("click", () => { hideOnboarding(); render(); });
   $("#killConflicts")?.addEventListener("click", killConflicts);
@@ -132,9 +137,24 @@ function render() {
   if (document.activeElement !== $("#updateUrl")) $("#updateUrl").value = s.app_update_url || "";
 
   renderUpdatePill(state.app_update);
+  renderPacks();
   $("#testBtn").disabled = testing;
   $("#cancelTestBtn").hidden = !testing;
   renderStrategySelection();
+}
+
+async function enableTestsigning() {
+  const ok = confirm(
+    "Включить режим тестовой подписи драйверов?\n\n" +
+    "Это нужно, чтобы Windows на ARM64 загрузила неподписанный драйвер WinDivert.\n" +
+    "• в углу рабочего стола появится надпись «Тестовый режим»;\n" +
+    "• Windows разрешит загрузку неподписанных драйверов;\n" +
+    "• выключить потом можно командой bcdedit /set {current} testsigning off.\n\n" +
+    "После включения нужна перезагрузка."
+  );
+  if (!ok) return;
+  try { toast(await invoke("enable_testsigning"), "info", 12000); }
+  catch (e) { toast(errText(e), "err", 9000); }
 }
 
 /* Подсказка при первом запуске: пока стратегия не подбиралась и не менялась. */
@@ -178,7 +198,7 @@ async function togglePower() {
 }
 $("#powerBtn").addEventListener("click", togglePower);
 
-const ENGINE_KEYS = ["strategy", "youtube_strategy","youtube", "discord", "discord_voice", "custom", "custom_mode", "quic", "debug_log", "custom_tls", "custom_http", "custom_quic"];
+const ENGINE_KEYS = ["strategy", "youtube_strategy", "packs", "youtube", "discord", "discord_voice", "custom", "custom_mode", "quic", "debug_log", "custom_tls", "custom_http", "custom_quic"];
 
 async function saveSettings(patch, { quiet = false } = {}) {
   const next = { ...state.settings, ...patch };
@@ -250,8 +270,42 @@ async function runQuickCheck() {
 }
 $("#checkBtn").addEventListener("click", runQuickCheck);
 
+/* ===================================================================== наборы сайтов */
+let packs = [];
+async function loadPacks() {
+  try { packs = await invoke("get_packs"); } catch { packs = []; }
+  renderPacks();
+}
+function renderPacks() {
+  const box = $("#packs");
+  if (!box || !state) return;
+  const on = new Set(state.settings.packs || []);
+  box.innerHTML = packs.map((p) => `
+    <button class="pack ${on.has(p.id) ? "on" : ""}" data-id="${esc(p.id)}" title="${esc(p.description)}">
+      <div class="pack-top"><span class="pack-ico">${icon(p.icon || "globe")}</span><span class="pack-check">${icon("tick")}</span></div>
+      <div class="pack-name">${esc(p.name)}</div>
+      <div class="pack-desc">${esc(p.description)}</div>
+      <div class="pack-count">${p.domains} ${plural(p.domains, "домен", "домена", "доменов")}</div>
+    </button>`).join("");
+  $$(".pack", box).forEach((b) => b.addEventListener("click", () => {
+    const set = new Set(state.settings.packs || []);
+    set.has(b.dataset.id) ? set.delete(b.dataset.id) : set.add(b.dataset.id);
+    b.classList.toggle("on");
+    // Сразу обновляем состояние, чтобы быстрые повторные нажатия не теряли выбор.
+    state.settings.packs = [...set];
+    saveSettings({ packs: state.settings.packs });
+  }));
+}
+
+/* ===================================================================== проверка конкретного сайта */
+$("#siteCheck").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const v = $("#siteCheck input").value.trim();
+  if (v) runTest(v);
+});
+
 /* ===================================================================== быстрое добавление сайта */
-$$(".add-site").forEach((form) => form.addEventListener("submit", async (e) => {
+$$(".add-site:not(.site-check)").forEach((form) => form.addEventListener("submit", async (e) => {
   e.preventDefault();
   const input = $("input", form);
   const value = input.value.trim();
@@ -364,20 +418,25 @@ function renderTestRows(runningIndex = -1) {
   }).join("");
 }
 
-async function runTest() {
+/** Подбор стратегии; `site` — проверить только этот сайт. */
+async function runTest(site = null) {
   if (testing) return;
   testing = true;
   testRows = [{ id: "baseline", name: "Без обхода", result: null }, ...strategies.map((s) => ({ id: s.id, name: s.name, result: null }))];
   $("#testPanel").hidden = false;
   $("#testFoot").hidden = true;
-  $("#testTitle").textContent = "Подбор стратегии";
-  $("#testSub").textContent = "Каждая стратегия запускается по очереди, и проверяется, открываются ли сайты. Это займёт около минуты.";
+  $("#testTitle").textContent = site ? `Проверка сайта ${site}` : "Подбор стратегии";
+  $("#testSub").textContent = site
+    ? "Сайт проверяется без обхода и с каждой стратегией по очереди."
+    : "Каждая стратегия запускается по очереди, и проверяется, открываются ли сайты. Это займёт около минуты.";
   $("#testBar").style.width = "0%";
+  if (site) $("#testPanel").scrollIntoView({ behavior: "smooth", block: "start" });
   renderTestRows(0);
   render();
   try {
-    report = await invoke("run_strategy_test");
-    finishTest();
+    const r = await invoke("run_strategy_test", { site });
+    if (r.site) finishSiteTest(r);
+    else { report = r; finishTest(); }
   } catch (e) {
     toast(errText(e), "err", 9000);
     $("#testSub").textContent = errText(e);
@@ -386,6 +445,33 @@ async function runTest() {
     await refresh();
     renderStrategies();
   }
+}
+
+function finishSiteTest(r) {
+  $("#testBar").style.width = "100%";
+  testRows.forEach((row) => {
+    row.result = row.id === "baseline" ? r.baseline : r.results.find((x) => x.id === row.id) || row.result;
+  });
+  renderTestRows(-1);
+  $("#testTitle").textContent = `Проверка ${r.site}${r.cancelled ? " остановлена" : " завершена"}`;
+  const working = r.results.filter((x) => x.ok > 0);
+  let msg;
+  if (r.baseline.ok > 0) msg = `${r.site} открывается и без обхода: блокировки нет или она частичная.`;
+  else if (working.length) msg = `${r.site} открывается со стратегиями: ${working.map((x) => `«${x.name}»`).join(", ")}.`;
+  else msg = `${r.site} не открылся ни с одной стратегией. Возможно, сайт заблокирован по IP или сейчас не работает.`;
+  const current = working.some((x) => x.id === state.settings.strategy);
+  const best = r.results.find((x) => x.id === r.best);
+  const foot = $("#testFoot");
+  foot.hidden = false;
+  const hint = working.length && !current
+    ? (working.length > 1 && best ? `Текущая стратегия для него не подходит, быстрее всех «${best.name}».` : "Текущая стратегия для него не подходит.")
+    : "";
+  foot.innerHTML = `<div>${esc(msg)}${hint ? `<br>${esc(hint)}` : ""}</div>`
+    + (working.length ? `<button class="btn primary" id="addCheckedSite">Добавить в «Мои сайты»</button>` : "");
+  $("#addCheckedSite")?.addEventListener("click", async () => {
+    try { toast(await invoke("add_domain", { input: r.site, list: "user" })); $("#addCheckedSite")?.remove(); refresh(); }
+    catch (e) { toast(errText(e), "err"); }
+  });
 }
 
 function finishTest() {
@@ -432,7 +518,7 @@ function finishTest() {
   });
 }
 
-$("#testBtn").addEventListener("click", runTest);
+$("#testBtn").addEventListener("click", () => runTest());
 $("#cancelTestBtn").addEventListener("click", () => invoke("cancel_strategy_test"));
 listen("start-test", () => { goto("strategies"); runTest(); });
 
@@ -544,6 +630,7 @@ $("#contentCheck").addEventListener("click", async () => {
 listen("content-updated", ({ payload }) => {
   toast(`Стратегии и списки обновлены (версия ${payload})`);
   loadStrategies();
+  loadPacks();
   refresh();
 });
 
@@ -630,6 +717,17 @@ onVisible(() => { if (!busy) refresh(); });
   hydrateIcons();
   await refresh();
   await loadStrategies();
+  await loadPacks();
   try { (await invoke("get_logs")).forEach((l) => logLine(l, false)); } catch {}
   if (state?.testing) { testing = true; render(); }
+  // Демо-режим для скриншотов (только в браузере, без Tauri).
+  const demo = !TAURI && new URLSearchParams(location.search);
+  if (demo && demo.get("demo")) {
+    hideOnboarding();
+    render();
+    if (demo.get("page")) goto(demo.get("page"));
+    if (demo.get("page") === "strategies") runTest();
+    else runQuickCheck();
+    if (demo.get("scroll")) setTimeout(() => { $(".content").scrollTop = +demo.get("scroll"); }, 300);
+  }
 })();

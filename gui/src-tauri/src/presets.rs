@@ -22,11 +22,29 @@ pub struct Strategy {
     pub quic: Option<Vec<String>>,
 }
 
+/// Готовый набор сайтов (Telegram, Instagram…): список доменов в lists/packs/<id>.txt.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Pack {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub icon: String,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Presets {
     pub quic_default: Vec<String>,
     pub discord_voice: Vec<String>,
     pub strategies: Vec<Strategy>,
+    #[serde(default)]
+    pub packs: Vec<Pack>,
+}
+
+/// id набора — только латиница, цифры, «-» и «_» (используется как имя файла).
+pub fn valid_pack_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 32 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 impl Presets {
@@ -93,6 +111,15 @@ pub fn build_args(settings: &Settings, presets: &Presets, strategy: &Strategy, y
         p
     };
 
+    // Проверка конкретного сайта: временный профиль только для него, идёт первым.
+    if !settings.test_domains.is_empty() {
+        let f = vec![format!("--hostlist-domains={}", settings.test_domains.join(","))];
+        tcp_ports.push(YT_TCP);
+        profiles.push(tcp_profile(strategy, YT_TCP, &f));
+        need_quic = true;
+        profiles.push(if settings.quic { quic_profile(strategy, &f) } else { quic_block(&f) });
+    }
+
     for (enabled, list, ports, s) in [
         (settings.youtube, "youtube", YT_TCP, yt),
         (settings.discord, "discord", DISCORD_TCP, strategy),
@@ -105,6 +132,22 @@ pub fn build_args(settings: &Settings, presets: &Presets, strategy: &Strategy, y
         profiles.push(tcp_profile(s, ports, &f));
         need_quic = true;
         profiles.push(if settings.quic { quic_profile(s, &f) } else { quic_block(&f) });
+    }
+    // Готовые наборы сайтов: один профиль со всеми включёнными списками.
+    let pack_lists: Vec<String> = settings
+        .packs
+        .iter()
+        .filter(|id| valid_pack_id(id))
+        .filter(|id| count_domains(&paths.lists.join("packs").join(format!("{id}.txt"))) > 0)
+        .map(|id| format!("--hostlist=lists/packs/{id}.txt"))
+        .collect();
+    if !pack_lists.is_empty() {
+        let mut f = pack_lists;
+        f.push("--hostlist-exclude=lists/exclude.txt".to_string());
+        tcp_ports.push(YT_TCP);
+        profiles.push(tcp_profile(strategy, YT_TCP, &f));
+        need_quic = true;
+        profiles.push(if settings.quic { quic_profile(strategy, &f) } else { quic_block(&f) });
     }
     if settings.discord_voice {
         let mut p = vec![
@@ -165,7 +208,7 @@ pub fn build_args(settings: &Settings, presets: &Presets, strategy: &Strategy, y
     }
 
     if profiles.is_empty() {
-        return Err(if settings.custom && !settings.youtube && !settings.discord && !settings.discord_voice {
+        return Err(if settings.custom && !settings.youtube && !settings.discord && !settings.discord_voice && settings.packs.is_empty() {
             "Список «Мои сайты» пуст. Добавьте домены или выберите режим «Все сайты».".into()
         } else {
             "Не выбрано ни одного сервиса для обхода.".into()
@@ -245,6 +288,7 @@ mod tests {
             quic_default: vec!["--lua-desync=quic_default".into()],
             discord_voice: vec!["--lua-desync=voice".into()],
             strategies: vec![s("main"), s("yt")],
+            packs: vec![],
         };
         (paths, presets)
     }
@@ -307,5 +351,27 @@ mod tests {
         assert!(args.iter().any(|a| a.contains("windivert_part.discord_media.txt")));
         assert!(args.contains(&"--filter-l7=discord,stun".into()));
         assert!(!args.iter().any(|a| a.starts_with("--wf-tcp-out")));
+    }
+
+    #[test]
+    fn packs_and_site_check() {
+        let (paths, presets) = setup("x");
+        let _ = fs::create_dir_all(paths.lists.join("packs"));
+        fs::write(paths.lists.join("packs").join("telegram.txt"), "t.me\n").unwrap();
+        fs::write(paths.lists.join("packs").join("empty.txt"), "# пусто\n").unwrap();
+        let settings = Settings {
+            youtube: false,
+            discord: false,
+            // Пустой набор пропускается, «плохой» id отбрасывается.
+            packs: vec!["telegram".into(), "empty".into(), "../evil".into()],
+            test_domains: vec!["example.com".into()],
+            ..base()
+        };
+        let args = build_args(&settings, &presets, &s("main"), &s("main"), &paths).unwrap();
+        assert!(args.contains(&"--hostlist=lists/packs/telegram.txt".into()));
+        assert!(!args.iter().any(|a| a.contains("empty.txt") || a.contains("evil")));
+        // Профиль проверяемого сайта идёт первым.
+        let first = &profiles(&args)[0];
+        assert!(first.contains(&"--hostlist-domains=example.com".into()));
     }
 }

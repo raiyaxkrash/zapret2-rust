@@ -51,6 +51,8 @@ pub struct TestReport {
     /// Лучшая стратегия для YouTube.
     pub best_youtube: Option<String>,
     pub cancelled: bool,
+    /// Проверялся конкретный сайт (а не набор сервисов).
+    pub site: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -182,23 +184,32 @@ fn pick(results: &[StrategyResult], score: impl Fn(&StrategyResult) -> usize) ->
         .map(|r| r.id.clone())
 }
 
-pub async fn run(app: AppHandle) -> Result<TestReport, String> {
+/// `site` — проверить только этот домен (проверка конкретного сайта).
+pub async fn run(app: AppHandle, site: Option<String>) -> Result<TestReport, String> {
     let state = app.state::<AppState>();
     if state.testing.swap(true, Ordering::SeqCst) {
         return Err("Подбор уже выполняется".into());
     }
     state.cancel_test.store(false, Ordering::SeqCst);
-    let res = run_inner(&app).await;
+    let res = run_inner(&app, site).await;
     let state = app.state::<AppState>();
     state.testing.store(false, Ordering::SeqCst);
     res
 }
 
-async fn run_inner(app: &AppHandle) -> Result<TestReport, String> {
+async fn run_inner(app: &AppHandle, site: Option<String>) -> Result<TestReport, String> {
     let state = app.state::<AppState>();
-    let settings = state.settings.lock().unwrap().clone();
+    let saved = state.settings.lock().unwrap().clone();
     let presets = Presets::load(&state.paths)?;
-    let urls = targets(&settings, &state);
+    // Для проверки сайта добавляем временный профиль только для него.
+    let mut settings = saved.clone();
+    let urls = match &site {
+        Some(d) => {
+            settings.test_domains = vec![d.clone()];
+            vec![("custom".to_string(), format!("https://{d}/"))]
+        }
+        None => targets(&settings, &state),
+    };
     let was_running = state.engine.is_running();
     let strategies = presets.all(&settings);
     let total = strategies.len() + 1;
@@ -244,14 +255,18 @@ async fn run_inner(app: &AppHandle) -> Result<TestReport, String> {
     let best_youtube = if has_yt { pick(&results, |r| r.yt_ok) } else { None };
 
     if was_running {
-        let id = settings.strategy.clone();
-        if let Err(e) = crate::start_with(app, &settings, &id, None).await {
+        let id = saved.strategy.clone();
+        if let Err(e) = crate::start_with(app, &saved, &id, None).await {
             state.engine.log(app, format!("[app] Не удалось вернуть обход: {e}"));
         }
     }
 
-    let report = TestReport { baseline, results, best, best_youtube, cancelled };
-    *state.last_report.lock().unwrap() = Some(report.clone());
+    let is_site = site.is_some();
+    let report = TestReport { baseline, results, best, best_youtube, cancelled, site };
+    // Отчёт о проверке одного сайта не заменяет общий отчёт подбора.
+    if !is_site {
+        *state.last_report.lock().unwrap() = Some(report.clone());
+    }
     Ok(report)
 }
 

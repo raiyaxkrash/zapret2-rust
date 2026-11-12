@@ -330,6 +330,30 @@ button.chip:hover { background: var(--glass-3); transform: translateY(-1px); }
 .add-site input[type="text"] { flex: 1; border: 0; background: transparent; padding: 6px 0; box-shadow: none; font-weight: 600; }
 .add-site input[type="text"]:focus { border: 0; box-shadow: none; }
 .add-site + .tabs { margin-top: 14px; }
+.site-check { margin: 0 0 14px; }
+
+/* ---------------------------------------------------------------- site packs */
+.packs { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+.pack {
+  position: relative; display: flex; flex-direction: column; gap: 10px; padding: 14px; text-align: left; cursor: pointer;
+  background: var(--glass); border: 1px solid var(--line); border-radius: var(--r-lg); color: var(--text);
+  transition: background .2s, border-color .2s, transform .2s var(--spring), box-shadow .2s;
+}
+.pack:hover { background: var(--glass-2); transform: translateY(-2px); }
+.pack:active { transform: scale(.98); }
+.pack-top { display: flex; align-items: center; justify-content: space-between; }
+.pack-ico { width: 40px; height: 40px; border-radius: 13px; display: grid; place-items: center; background: var(--glass-3); color: var(--text-2); transition: background .25s, color .25s; }
+.pack-ico .ico { width: 20px; height: 20px; }
+.pack-check { width: 22px; height: 22px; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--line-2); display: grid; place-items: center; color: #fff; transition: background .2s; }
+.pack-check .ico { width: 13px; height: 13px; opacity: 0; transition: opacity .2s; }
+.pack-name { font: 700 14px/1.25 var(--font-display); }
+.pack-desc { font-size: 12px; color: var(--text-2); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pack-count { font-size: 11.5px; color: var(--text-3); font-weight: 600; margin-top: auto; }
+.pack.on { background: var(--glass-2); border-color: rgba(236, 72, 153, .55); box-shadow: 0 0 0 1px rgba(236, 72, 153, .35), 0 8px 24px rgba(219, 39, 119, .15); }
+.pack.on .pack-ico { background: var(--grad); color: #fff; }
+.pack.on .pack-check { background: var(--grad); box-shadow: none; }
+.pack.on .pack-check .ico { opacity: 1; }
+.pack:disabled { opacity: .6; cursor: default; transform: none; }
 
 /* ---------------------------------------------------------------- services */
 .services { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
@@ -348,7 +372,7 @@ button.chip:hover { background: var(--glass-3); transform: translateY(-1px); }
 .strategy-list { display: flex; flex-direction: column; gap: 8px; }
 .strategy { display: grid; grid-template-columns: auto 1fr; gap: 16px; padding: 16px 18px; cursor: pointer; transition: background .2s, border-color .2s, box-shadow .3s; }
 .strategy:hover { background: var(--glass-2); }
-.strategy.selected { border-color: transparent; background: linear-gradient(var(--glass-2), var(--glass-2)) padding-box, var(--grad) border-box; border: 1.5px solid transparent; box-shadow: 0 10px 30px rgba(219, 39, 119, .16); }
+.strategy.selected { background: var(--glass-2); border-color: rgba(236, 72, 153, .55); box-shadow: 0 0 0 1px rgba(236, 72, 153, .35), 0 10px 30px rgba(219, 39, 119, .16); }
 .radio { width: 22px; height: 22px; border-radius: 50%; margin-top: 1px; box-shadow: inset 0 0 0 2px var(--line-2); display: grid; place-items: center; transition: all .25s; }
 .radio::after { content: ""; width: 0; height: 0; border-radius: 50%; background: #fff; transition: all .3s var(--spring); }
 .strategy.selected .radio { background: var(--grad); box-shadow: 0 0 12px rgba(219, 39, 119, .5); }

@@ -21,6 +21,11 @@ pub struct Settings {
     /// "list" — только сайты из «Моих сайтов», "auto" — плюс автоматически найденные, "all" — все сайты, кроме исключений.
     pub custom_mode: String,
     pub quic: bool,
+    /// Включённые готовые наборы сайтов (id из presets.json).
+    pub packs: Vec<String>,
+    /// Временный профиль для проверки конкретного сайта (не сохраняется).
+    #[serde(skip)]
+    pub test_domains: Vec<String>,
 
     pub autostart: bool,
     pub start_minimized: bool,
@@ -53,6 +58,8 @@ impl Default for Settings {
             custom: false,
             custom_mode: "list".into(),
             quic: true,
+            packs: Vec::new(),
+            test_domains: Vec::new(),
             autostart: false,
             start_minimized: true,
             engine_on_launch: true,

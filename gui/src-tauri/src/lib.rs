@@ -375,6 +375,27 @@ fn get_strategies(state: State<'_, AppState>) -> CmdResult<Vec<Strategy>> {
     Ok(Presets::load(&state.paths)?.all(&settings))
 }
 
+#[derive(Serialize)]
+struct PackInfo {
+    #[serde(flatten)]
+    pack: presets::Pack,
+    domains: usize,
+}
+
+#[tauri::command]
+fn get_packs(state: State<'_, AppState>) -> CmdResult<Vec<PackInfo>> {
+    let presets = Presets::load(&state.paths)?;
+    Ok(presets
+        .packs
+        .into_iter()
+        .filter(|p| presets::valid_pack_id(&p.id))
+        .map(|p| PackInfo {
+            domains: paths::count_domains(&state.paths.lists.join("packs").join(format!("{}.txt", p.id))),
+            pack: p,
+        })
+        .collect())
+}
+
 #[tauri::command]
 async fn save_settings(app: AppHandle, new: Settings) -> CmdResult<Settings> {
     let state = app.state::<AppState>();
@@ -398,6 +419,7 @@ async fn save_settings(app: AppHandle, new: Settings) -> CmdResult<Settings> {
         || old.custom != new.custom
         || old.custom_mode != new.custom_mode
         || old.quic != new.quic
+        || old.packs != new.packs
         || old.debug_log != new.debug_log
         || (new.strategy == "custom"
             && (old.custom_tls != new.custom_tls || old.custom_http != new.custom_http || old.custom_quic != new.custom_quic));
@@ -424,7 +446,7 @@ fn read_list(state: State<'_, AppState>, name: String) -> CmdResult<String> {
 #[tauri::command]
 async fn write_list(app: AppHandle, name: String, content: String) -> CmdResult<()> {
     let state = app.state::<AppState>();
-    if paths::BUILTIN_LISTS.contains(&name.as_str()) {
+    if paths::BUILTIN_LISTS.contains(&name.as_str()) || name.starts_with("pack:") {
         return Err("Встроенные списки обновляются вместе с приложением. Добавляйте сайты в «Мои сайты».".into());
     }
     let p = state.paths.list_file(&name).ok_or("Неизвестный список")?;
@@ -474,6 +496,13 @@ async fn add_domain(app: AppHandle, input: String, list: Option<String>) -> CmdR
     Ok(msg)
 }
 
+/// Включает тестовый режим подписи драйверов (только ARM64, только по кнопке с подтверждением).
+#[tauri::command]
+fn enable_testsigning() -> CmdResult<String> {
+    platform::enable_testsigning()?;
+    Ok("Тестовый режим включён. Перезагрузите компьютер, после этого обход заработает.".into())
+}
+
 /// Быстрая проверка доступности сервисов с текущими настройками (без перезапуска обхода).
 #[tauri::command]
 async fn quick_check(app: AppHandle) -> CmdResult<tester::StrategyResult> {
@@ -497,12 +526,17 @@ fn clear_logs(state: State<'_, AppState>) {
 }
 
 #[tauri::command]
-async fn run_strategy_test(app: AppHandle) -> CmdResult<TestReport> {
+async fn run_strategy_test(app: AppHandle, site: Option<String>) -> CmdResult<TestReport> {
+    // Проверка конкретного сайта: принимаем и ссылку, и домен.
+    let site = match site.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+        Some(s) => Some(util::normalize_domain(&s)?),
+        None => None,
+    };
     {
         let state = app.state::<AppState>();
         let _guard = state.busy.lock().await;
     }
-    let r = tester::run(app.clone()).await;
+    let r = tester::run(app.clone(), site).await;
     update_tray(&app);
     r
 }
@@ -573,7 +607,7 @@ async fn install_engine_update_inner(app: &AppHandle) -> CmdResult<String> {
     let was_running = state.engine.is_running();
     state.engine.stop(app);
     let _ = app.emit("engine-update-progress", "Установка…");
-    let res = zapret_update::install(&paths, &staging);
+    let res = zapret_update::install(&paths, &staging).and_then(|_| paths.apply_arm64_driver());
     if was_running {
         let _ = start_current(app).await;
     }
@@ -853,6 +887,8 @@ pub fn run() {
             hide_flyout,
             add_domain,
             quick_check,
+            enable_testsigning,
+            get_packs,
             quit_app,
             check_content_update,
             update_content,

@@ -1,0 +1,24 @@
+name: Добавить сайт или набор сайтов
+description: Предложить домены для встроенных списков или новый набор (как Telegram, Roblox)
+labels: [lists]
+body:
+  - type: input
+    id: name
+    attributes:
+      label: Сервис
+      placeholder: "Например: SoundCloud"
+    validations:
+      required: true
+  - type: textarea
+    id: domains
+    attributes:
+      label: Домены
+      description: По одному в строке. Поддомены добавлять не нужно, они учитываются автоматически.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: check
+    attributes:
+      label: Проверка
+      description: Результат «Стратегии» → «Проверить сайт» для основного домена (какие стратегии сработали).

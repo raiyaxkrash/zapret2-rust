@@ -21,6 +21,55 @@ pub struct Platform {
     pub build: u32,
     pub mica: bool,
     pub accent: Accent,
+    /// Компьютер на ARM64 (x64-сборка приложения работает через эмуляцию Windows 11).
+    pub arm64: bool,
+    /// Включён режим тестовой подписи драйверов (нужен для ARM64-драйвера WinDivert).
+    pub testsigning: bool,
+    pub secure_boot: bool,
+}
+
+pub fn is_arm64() -> bool {
+    static V: OnceLock<bool> = OnceLock::new();
+    *V.get_or_init(|| {
+        // Переменная процесса под эмуляцией показывает AMD64, поэтому берём системную.
+        reg_value(r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment", "PROCESSOR_ARCHITECTURE")
+            .map(|v| v.eq_ignore_ascii_case("ARM64"))
+            .unwrap_or(false)
+    })
+}
+
+/// Включён ли режим тестовой подписи. `bcdedit` показывает значение по-английски или по-русски.
+pub fn testsigning_enabled() -> bool {
+    let Ok(out) = hidden_command("bcdedit").args(["/enum", "{current}"]).output() else { return false };
+    let text = String::from_utf8_lossy(&out.stdout).to_lowercase();
+    text.lines()
+        .find(|l| l.trim_start().starts_with("testsigning"))
+        .map(|l| l.contains("yes") || l.contains("да"))
+        .unwrap_or(false)
+}
+
+pub fn secure_boot_enabled() -> bool {
+    reg_value(r"HKLM\SYSTEM\CurrentControlSet\Control\SecureBoot\State", "UEFISecureBootEnabled")
+        .map(|v| v.trim_start_matches("0x") == "1")
+        .unwrap_or(false)
+}
+
+/// Включает режим тестовой подписи (только по явному запросу пользователя на ARM64).
+pub fn enable_testsigning() -> Result<(), String> {
+    if !is_arm64() {
+        return Err("Тестовый режим нужен только на компьютерах с ARM64".into());
+    }
+    if secure_boot_enabled() {
+        return Err("Включена безопасная загрузка (Secure Boot). Выключите её в настройках UEFI/BIOS, затем повторите.".into());
+    }
+    let out = hidden_command("bcdedit")
+        .args(["/set", "{current}", "testsigning", "on"])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(format!("bcdedit: {}", String::from_utf8_lossy(&out.stdout).trim()));
+    }
+    Ok(())
 }
 
 fn reg_value(key: &str, value: &str) -> Option<String> {
@@ -55,7 +104,16 @@ fn read_accent() -> Accent {
 pub fn info() -> Platform {
     static CACHE: OnceLock<(u32, Accent)> = OnceLock::new();
     let (build, accent) = CACHE.get_or_init(|| (read_build(), read_accent())).clone();
-    Platform { build, mica: build >= 22000, accent }
+    let arm64 = is_arm64();
+    Platform {
+        build,
+        mica: build >= 22000,
+        accent,
+        arm64,
+        // bcdedit и реестр опрашиваем только на ARM64: на остальных это не нужно.
+        testsigning: arm64 && testsigning_enabled(),
+        secure_boot: arm64 && secure_boot_enabled(),
+    }
 }
 
 /// Применяет тему ("system" | "light" | "dark") и подложку Mica ко всем окнам.

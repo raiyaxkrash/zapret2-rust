@@ -62,23 +62,31 @@ pub async fn update(paths: &Paths) -> Result<Option<u64>, String> {
     if latest <= paths.content_version() {
         return Ok(None);
     }
-    serde_json::from_str::<Presets>(&presets_text).map_err(|e| format!("Ошибка в загруженном presets.json: {e}"))?;
+    let presets: Presets =
+        serde_json::from_str(&presets_text).map_err(|e| format!("Ошибка в загруженном presets.json: {e}"))?;
 
-    let mut lists = Vec::new();
+    // Встроенные списки и наборы сайтов: относительный путь внутри lists/ и текст.
+    let mut lists: Vec<(String, String)> = Vec::new();
     for name in BUILTIN_LISTS {
-        let text = fetch(&c, &format!("lists/{name}.txt")).await?;
+        let rel = format!("{name}.txt");
+        let text = fetch(&c, &format!("lists/{rel}")).await?;
         if crate::paths::count_domains_text(&text) == 0 {
             return Err(format!("Загруженный список {name} пуст"));
         }
-        lists.push((name, text));
+        lists.push((rel, text));
+    }
+    for pack in presets.packs.iter().filter(|p| crate::presets::valid_pack_id(&p.id)) {
+        let rel = format!("packs/{}.txt", pack.id);
+        let text = fetch(&c, &format!("lists/{rel}")).await?;
+        lists.push((rel, text));
     }
 
     let staging = paths.root.join("remote.new");
     let _ = fs::remove_dir_all(&staging);
-    fs::create_dir_all(staging.join("lists")).map_err(|e| e.to_string())?;
+    fs::create_dir_all(staging.join("lists").join("packs")).map_err(|e| e.to_string())?;
     fs::write(staging.join("presets.json"), &presets_text).map_err(|e| e.to_string())?;
-    for (name, text) in &lists {
-        fs::write(staging.join("lists").join(format!("{name}.txt")), text).map_err(|e| e.to_string())?;
+    for (rel, text) in &lists {
+        fs::write(staging.join("lists").join(rel), text).map_err(|e| e.to_string())?;
     }
     let _ = fs::remove_dir_all(&paths.remote);
     fs::rename(&staging, &paths.remote).map_err(|e| format!("Не удалось сохранить обновление: {e}"))?;

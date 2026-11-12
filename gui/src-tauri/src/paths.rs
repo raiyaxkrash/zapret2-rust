@@ -95,6 +95,18 @@ impl Paths {
                     .map_err(|e| format!("Не удалось скопировать список {name}: {e}"))?;
             }
         }
+        // Наборы сайтов (lists/packs/*.txt).
+        let packs_src = src_dir.join("packs");
+        let packs_dst = self.lists.join("packs");
+        if packs_src.is_dir() {
+            fs::create_dir_all(&packs_dst).map_err(|e| e.to_string())?;
+            for entry in fs::read_dir(&packs_src).map_err(|e| e.to_string())?.flatten() {
+                let p = entry.path();
+                if p.extension().map(|e| e == "txt").unwrap_or(false) {
+                    let _ = fs::copy(&p, packs_dst.join(entry.file_name()));
+                }
+            }
+        }
         Ok(())
     }
 
@@ -109,6 +121,12 @@ impl Paths {
         if BUILTIN_LISTS.contains(&name) || USER_LISTS.contains(&name) {
             return Some(self.lists.join(format!("{name}.txt")));
         }
+        // Наборы сайтов: "pack:telegram" -> lists/packs/telegram.txt (только чтение).
+        if let Some(id) = name.strip_prefix("pack:") {
+            if crate::presets::valid_pack_id(id) {
+                return Some(self.lists.join("packs").join(format!("{id}.txt")));
+            }
+        }
         None
     }
 
@@ -118,6 +136,22 @@ impl Paths {
 
     pub fn bundled_engine_version(&self) -> String {
         read_version(&self.resources.join("engine").join("version.txt"))
+    }
+
+    /// На ARM64 подменяет драйвер WinDivert на ARM64-версию (x64-драйвер там не загрузится).
+    /// Вызывается после любой установки или обновления движка.
+    pub fn apply_arm64_driver(&self) -> Result<(), String> {
+        if !crate::platform::is_arm64() {
+            return Ok(());
+        }
+        let src = self.resources.join("arm64").join("WinDivert64.sys");
+        let dst = self.engine.join("bin").join("WinDivert64.sys");
+        let Ok(want) = fs::read(&src) else { return Ok(()) };
+        if fs::read(&dst).map(|have| have == want).unwrap_or(false) {
+            return Ok(());
+        }
+        release_driver();
+        fs::write(&dst, want).map_err(|e| format!("Не удалось установить ARM64-драйвер WinDivert: {e}"))
     }
 
     /// Копирует ресурсы из установщика в рабочий каталог.
@@ -131,6 +165,7 @@ impl Paths {
             copy_dir(&bundled, &self.engine)?;
         }
 
+        self.apply_arm64_driver()?;
         self.sync_builtin_lists()?;
         let res_lists = self.resources.join("lists");
         for name in USER_LISTS {
