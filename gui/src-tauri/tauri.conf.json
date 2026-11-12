@@ -4,7 +4,9 @@
   "version": "1.4.0",
   "identifier": "io.github.zapret2gui",
   "build": {
-    "frontendDist": "../ui"
+    "frontendDist": "../ui",
+    "beforeDevCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-tg-proxy.ps1",
+    "beforeBuildCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-tg-proxy.ps1"
   },
   "app": {
     "withGlobalTauri": true,
@@ -50,7 +52,8 @@
       "../resources/presets.json": "presets.json",
       "../resources/arm64/WinDivert64.sys": "arm64/WinDivert64.sys",
       "../resources/lists/packs/*": "lists/packs/",
-      "../resources/lists/*.txt": "lists/"
+      "../resources/lists/*.txt": "lists/",
+      "../resources/tg-ws-proxy/": "tg-ws-proxy/"
     },
     "windows": {
       "nsis": {

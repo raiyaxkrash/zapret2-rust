@@ -3,3 +3,5 @@ src-tauri/target/
 src-tauri/gen/
 # Закрытый ключ подписи обновлений: никогда не публикуйте его
 .keys/
+# Собирается скриптом scripts/build-tg-proxy.ps1 (автоматически перед tauri build/dev)
+resources/tg-ws-proxy/

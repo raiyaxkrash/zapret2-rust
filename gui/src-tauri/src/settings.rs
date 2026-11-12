@@ -42,6 +42,12 @@ pub struct Settings {
     pub theme: String,
     pub animations: bool,
 
+    /// Локальный прокси для Telegram Desktop (tg-ws-proxy).
+    pub tg_proxy: bool,
+    pub tg_proxy_port: u16,
+    /// Секрет MTProto (32 hex-символа). Создаётся один раз, чтобы ссылка в Telegram не менялась.
+    pub tg_proxy_secret: String,
+
     pub custom_tls: String,
     pub custom_http: String,
     pub custom_quic: String,
@@ -71,6 +77,9 @@ impl Default for Settings {
             app_update_url: DEFAULT_APP_UPDATE_URL.into(),
             theme: "system".into(),
             animations: true,
+            tg_proxy: false,
+            tg_proxy_port: crate::tgproxy::DEFAULT_PORT,
+            tg_proxy_secret: String::new(),
             custom_tls: "--payload=tls_client_hello --lua-desync=fake:blob=tls_google:tcp_md5:repeats=6 --lua-desync=multisplit:pos=1,midsld".into(),
             custom_http: "--payload=http_req --lua-desync=fake:blob=fake_default_http:tcp_md5:repeats=6 --lua-desync=multisplit:pos=method+2".into(),
             custom_quic: "--payload=quic_initial --lua-desync=fake:blob=quic_google:repeats=6".into(),
@@ -86,6 +95,12 @@ impl Settings {
             .unwrap_or_default();
         if s.app_update_url.trim().is_empty() {
             s.app_update_url = DEFAULT_APP_UPDATE_URL.into();
+        }
+        if !crate::tgproxy::valid_secret(&s.tg_proxy_secret) {
+            s.tg_proxy_secret = crate::tgproxy::new_secret();
+        }
+        if s.tg_proxy_port < 1024 {
+            s.tg_proxy_port = crate::tgproxy::DEFAULT_PORT;
         }
         s
     }

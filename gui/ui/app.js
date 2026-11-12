@@ -136,7 +136,10 @@ function render() {
   $("#dataDir").textContent = state.data_dir;
   if (document.activeElement !== $("#updateUrl")) $("#updateUrl").value = s.app_update_url || "";
 
+  if (document.activeElement !== $("#tgPort")) $("#tgPort").value = s.tg_proxy_port || 1443;
+
   renderUpdatePill(state.app_update);
+  renderTgProxy();
   renderPacks();
   $("#testBtn").disabled = testing;
   $("#cancelTestBtn").hidden = !testing;
@@ -296,6 +299,47 @@ function renderPacks() {
     saveSettings({ packs: state.settings.packs });
   }));
 }
+
+/* ===================================================================== прокси для Telegram */
+function renderTgProxy() {
+  const tg = state.tg_proxy;
+  const on = !!state.settings.tg_proxy;
+  const card = $("#tgCard");
+  card.querySelector(".setting").classList.toggle("checked", on);
+  card.classList.toggle("on", on && tg.running);
+  const failed = on && !tg.running && tg.last_error;
+  $("#tgActions").hidden = !on || !tg.available;
+  $("#tgOpen").hidden = $("#tgCopy").hidden = !tg.running;
+  $("#tgRetry").hidden = !failed;
+  $("#tgHint").textContent = failed ? tg.last_error
+    : tg.running ? "Нажмите «Подключить» и подтвердите в Telegram. Это нужно сделать один раз."
+    : "Запуск…";
+  $("#tgHint").classList.toggle("err", !!failed);
+  $("#tgDesc").textContent = !tg.available ? "Не входит в эту сборку приложения"
+    : !on ? "Приложение Telegram подключится через WebSocket, без настройки обхода"
+    : tg.running ? `Работает на 127.0.0.1:${tg.port}`
+    : failed ? "Не запущен" : "Запуск…";
+  $("#tgVerAbout").textContent = tg.version ? ` Версия tg-ws-proxy: ${tg.version}.` : "";
+}
+
+$("#tgOpen").addEventListener("click", async () => {
+  try { await invoke("tg_proxy_open"); toast("Подтвердите подключение к прокси в окне Telegram", "info", 7000); }
+  catch (e) { toast(errText(e), "err"); }
+});
+$("#tgCopy").addEventListener("click", () =>
+  navigator.clipboard.writeText(state.tg_proxy.link).then(() => toast("Ссылка скопирована. Отправьте её себе в Telegram и откройте")));
+$("#tgRetry").addEventListener("click", async () => {
+  $("#tgRetry").disabled = true;
+  try { await invoke("tg_proxy_start"); } catch (e) { toast(errText(e), "err", 9000); }
+  $("#tgRetry").disabled = false;
+  refresh();
+});
+$("#saveTgPort").addEventListener("click", () => {
+  const port = parseInt($("#tgPort").value, 10);
+  if (!(port >= 1024 && port <= 65535)) { toast("Порт должен быть числом от 1024 до 65535", "err"); return; }
+  saveSettings({ tg_proxy_port: port }, { quiet: true }).then(() => { if (state.settings.tg_proxy_port === port) toast(`Порт сохранён: ${port}`); });
+});
+listen("tg-proxy-state", () => { if (!busy) refresh(); });
 
 /* ===================================================================== проверка конкретного сайта */
 $("#siteCheck").addEventListener("submit", (e) => {

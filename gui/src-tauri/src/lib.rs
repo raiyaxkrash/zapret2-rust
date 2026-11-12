@@ -6,6 +6,7 @@ mod platform;
 mod presets;
 mod settings;
 mod tester;
+mod tgproxy;
 mod util;
 mod zapret_update;
 
@@ -28,12 +29,14 @@ use paths::Paths;
 use presets::{build_args, Presets, Strategy};
 use settings::Settings;
 use tester::TestReport;
+use tgproxy::{TgProxy, TgProxyStatus};
 use zapret_update::EngineUpdateInfo;
 
 pub struct AppState {
     pub paths: Paths,
     pub settings: Mutex<Settings>,
     pub engine: Arc<Engine>,
+    pub tg: Arc<TgProxy>,
     pub testing: AtomicBool,
     pub cancel_test: AtomicBool,
     pub last_report: Mutex<Option<TestReport>>,
@@ -181,6 +184,57 @@ fn on_engine_crash(app: AppHandle) {
     });
 }
 
+// ---------------------------------------------------------------- telegram proxy
+
+fn tg_status(state: &AppState) -> TgProxyStatus {
+    let s = state.settings.lock().unwrap();
+    state.tg.status(&state.paths.resources, s.tg_proxy_port, &s.tg_proxy_secret)
+}
+
+/// Приводит прокси для Telegram в соответствие с настройками: запускает,
+/// перезапускает (если сменился порт или секрет) или останавливает.
+async fn tg_apply(app: &AppHandle, restart: bool) -> CmdResult<()> {
+    let state = app.state::<AppState>();
+    let (on, port, secret) = {
+        let s = state.settings.lock().unwrap();
+        (s.tg_proxy, s.tg_proxy_port, s.tg_proxy_secret.clone())
+    };
+    if !on {
+        state.tg.stop(app);
+        state.tg.clear_error();
+        return Ok(());
+    }
+    if state.tg.is_running() && !restart {
+        return Ok(());
+    }
+    state.tg.start(app, &state.paths.resources, port, &secret).await
+}
+
+/// Автоперезапуск прокси для Telegram после падения: не больше трёх раз за 5 минут.
+fn on_tg_crash(app: AppHandle) {
+    static CRASHES: Mutex<Vec<Instant>> = Mutex::new(Vec::new());
+    let allowed = {
+        let mut c = CRASHES.lock().unwrap();
+        c.retain(|t| t.elapsed() < Duration::from_secs(300));
+        c.push(Instant::now());
+        c.len() <= 3
+    };
+    tauri::async_runtime::spawn(async move {
+        if !allowed {
+            let _ = app.emit("toast", "Прокси для Telegram несколько раз неожиданно завершился. Подробности в журнале.");
+            return;
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let _ = tg_apply(&app, false).await;
+    });
+}
+
+fn stop_all(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    state.engine.stop(app);
+    state.tg.stop(app);
+}
+
 /// Показывает или прячет окно и сообщает ему об этом: скрытое окно
 /// останавливает анимации и таймеры, чтобы не нагружать видеокарту и процессор.
 fn set_shown(app: &AppHandle, label: &str, shown: bool) {
@@ -276,6 +330,7 @@ struct AppInfo {
     content_version: u64,
     platform: platform::Platform,
     app_update: Option<AppUpdateInfo>,
+    tg_proxy: TgProxyStatus,
 }
 
 #[tauri::command]
@@ -295,6 +350,7 @@ fn get_state(app: AppHandle, state: State<'_, AppState>) -> AppInfo {
         content_version: state.paths.content_version(),
         app_update: state.app_update.lock().unwrap().clone(),
         platform: platform::info(),
+        tg_proxy: tg_status(&state),
     }
 }
 
@@ -314,7 +370,7 @@ fn hide_flyout(app: AppHandle) {
 
 #[tauri::command]
 fn quit_app(app: AppHandle) {
-    app.state::<AppState>().engine.stop(&app);
+    stop_all(&app);
     app.exit(0);
 }
 
@@ -401,6 +457,13 @@ async fn save_settings(app: AppHandle, new: Settings) -> CmdResult<Settings> {
     let state = app.state::<AppState>();
     let _guard = state.busy.lock().await;
     let old = state.settings.lock().unwrap().clone();
+    let mut new = new;
+    if !tgproxy::valid_secret(&new.tg_proxy_secret) {
+        new.tg_proxy_secret = old.tg_proxy_secret.clone();
+    }
+    if new.tg_proxy_port < 1024 {
+        return Err("Порт прокси для Telegram должен быть от 1024 до 65535".into());
+    }
     if new.autostart != old.autostart || new.autostart != autostart::is_enabled() {
         autostart::set(new.autostart)?;
     }
@@ -427,6 +490,10 @@ async fn save_settings(app: AppHandle, new: Settings) -> CmdResult<Settings> {
         restart_if_running(&app).await?;
     }
     let _ = app.emit("settings-changed", new.clone());
+    let tg_changed = old.tg_proxy_port != new.tg_proxy_port || old.tg_proxy_secret != new.tg_proxy_secret;
+    if old.tg_proxy != new.tg_proxy || (new.tg_proxy && tg_changed) {
+        tg_apply(&app, tg_changed).await?;
+    }
     Ok(new)
 }
 
@@ -576,6 +643,26 @@ fn open_url(url: String) -> CmdResult<()> {
     Ok(())
 }
 
+#[tauri::command]
+async fn tg_proxy_start(app: AppHandle) -> CmdResult<TgProxyStatus> {
+    tg_apply(&app, true).await?;
+    Ok(tg_status(&app.state::<AppState>()))
+}
+
+/// Открывает ссылку tg://proxy — Telegram Desktop сам предложит подключиться к прокси.
+#[tauri::command]
+fn tg_proxy_open(state: State<'_, AppState>) -> CmdResult<()> {
+    let link = tg_status(&state).link;
+    if link.is_empty() {
+        return Err("Ссылка на прокси ещё не готова".into());
+    }
+    util::hidden_command("rundll32")
+        .args(["url.dll,FileProtocolHandler", &link])
+        .spawn()
+        .map_err(|e| format!("Не удалось открыть Telegram: {e}"))?;
+    Ok(())
+}
+
 // ---------------------------------------------------------------- zapret2 updates
 
 #[tauri::command]
@@ -685,8 +772,8 @@ async fn install_app_update(app: AppHandle) -> CmdResult<()> {
         )
         .await
         .map_err(|e| format!("Ошибка загрузки обновления: {e}"))?;
-    // Перед установкой останавливаем winws2.
-    app.state::<AppState>().engine.stop(&app);
+    // Перед установкой останавливаем winws2 и прокси для Telegram: их файлы будут заменены.
+    stop_all(&app);
     update.install(bytes).map_err(|e| format!("Ошибка установки: {e}"))?;
     app.restart();
 }
@@ -756,7 +843,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                 });
             }
             "quit" => {
-                app.state::<AppState>().engine.stop(app);
+                stop_all(app);
                 app.exit(0);
             }
             _ => {}
@@ -787,6 +874,7 @@ pub fn run() {
 
             // Остатки прошлого запуска (например, после аварийного завершения).
             let _ = util::hidden_command("taskkill").args(["/F", "/IM", "winws2.exe"]).output();
+            let _ = util::hidden_command("taskkill").args(["/F", "/IM", "tg-ws-proxy.exe"]).output();
             if let Err(e) = paths.sync_resources() {
                 eprintln!("sync resources: {e}");
             }
@@ -797,6 +885,7 @@ pub fn run() {
                 paths,
                 settings: Mutex::new(settings.clone()),
                 engine: Arc::new(Engine::default()),
+                tg: Arc::new(TgProxy::default()),
                 testing: AtomicBool::new(false),
                 cancel_test: AtomicBool::new(false),
                 last_report: Mutex::new(None),
@@ -815,6 +904,8 @@ pub fn run() {
                 handle.listen_any("engine-state", move |_| update_tray(&h));
                 let h = handle.clone();
                 handle.listen_any("engine-crashed", move |_| on_engine_crash(h.clone()));
+                let h = handle.clone();
+                handle.listen_any("tg-proxy-crashed", move |_| on_tg_crash(h.clone()));
             }
 
             if !(autostarted && settings.start_minimized) {
@@ -827,6 +918,14 @@ pub fn run() {
                     let _guard = state.busy.lock().await;
                     if let Err(e) = start_current(&h).await {
                         let _ = h.emit("toast", format!("Не удалось включить обход: {e}"));
+                    }
+                });
+            }
+            if settings.tg_proxy {
+                let h = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = tg_apply(&h, false).await {
+                        let _ = h.emit("toast", format!("Прокси для Telegram: {e}"));
                     }
                 });
             }
@@ -857,7 +956,7 @@ pub fn run() {
                     api.prevent_close();
                     set_shown(app, window.label(), false);
                 } else {
-                    app.state::<AppState>().engine.stop(app);
+                    stop_all(app);
                     app.exit(0);
                 }
             }
@@ -892,6 +991,8 @@ pub fn run() {
             quit_app,
             check_content_update,
             update_content,
+            tg_proxy_start,
+            tg_proxy_open,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -899,6 +1000,7 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 if let Some(state) = app.try_state::<AppState>() {
                     state.engine.stop(app);
+                    state.tg.stop(app);
                 }
             }
         });

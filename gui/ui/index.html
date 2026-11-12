@@ -98,6 +98,21 @@
             </label>
           </div>
 
+          <h2 class="section-title">Telegram</h2>
+          <div class="tg-card" id="tgCard">
+            <label class="setting">
+              <div class="service-ico tg"><span data-icon="send"></span></div>
+              <div class="setting-text"><div class="setting-title">Прокси для Telegram Desktop</div><div class="setting-desc" id="tgDesc">Приложение Telegram подключится через WebSocket, без настройки обхода</div></div>
+              <span class="switch"><input type="checkbox" data-setting="tg_proxy" /><i></i></span>
+            </label>
+            <div class="tg-actions" id="tgActions" hidden>
+              <span class="tg-hint" id="tgHint">Нажмите «Подключить» и подтвердите в Telegram. Это нужно сделать один раз.</span>
+              <button class="btn small" id="tgCopy"><span data-icon="copy"></span>Скопировать ссылку</button>
+              <button class="btn small primary" id="tgOpen"><span data-icon="send"></span>Подключить в Telegram</button>
+              <button class="btn small primary" id="tgRetry" hidden><span data-icon="refresh"></span>Запустить снова</button>
+            </div>
+          </div>
+
           <h2 class="section-title">Наборы сайтов</h2>
           <div class="packs" id="packs"></div>
 
@@ -284,13 +299,16 @@
           <h2 class="section-title">Дополнительно</h2>
           <div class="settings-group">
             <label class="setting"><span data-icon="terminal"></span><div class="setting-text"><div class="setting-title">Подробный журнал</div><div class="setting-desc">winws2 будет писать отладочный вывод (--debug). Немного нагружает процессор</div></div><div class="setting-control"><span class="state-label"></span><span class="switch"><input type="checkbox" data-setting="debug_log" /><i></i></span></div></label>
+            <div class="setting"><span data-icon="send"></span><div class="setting-text"><div class="setting-title">Порт прокси для Telegram</div><div class="setting-desc">По умолчанию 1443. После смены порта заново подключите прокси в Telegram</div></div>
+              <div class="field-row" style="max-width:220px"><input id="tgPort" type="number" min="1024" max="65535" /><button class="btn" id="saveTgPort">Сохранить</button></div>
+            </div>
             <div class="setting"><span data-icon="download"></span><div class="setting-text"><div class="setting-title">Источник обновлений приложения</div><div class="setting-desc">Адрес файла latest.json</div></div>
               <div class="field-row" style="max-width:460px"><input id="updateUrl" type="url" /><button class="btn" id="saveUpdateUrl">Сохранить</button></div>
             </div>
             <div class="setting"><span data-icon="folder"></span><div class="setting-text"><div class="setting-title">Папка с данными</div><div class="setting-desc" id="dataDir"></div></div><button class="btn" id="openDataDir">Открыть</button></div>
           </div>
 
-          <p class="about">Zapret2 GUI использует <a href="#" data-url="https://github.com/bol-van/zapret2">zapret2</a> (bol-van, MIT) и драйвер WinDivert. Антивирусы иногда ошибочно считают WinDivert опасным: это драйвер перехвата пакетов, а не вирус. Исходный код: <a href="#" data-url="https://github.com/raiyaxkrash/zapret2-rust">raiyaxkrash/zapret2-rust</a>.</p>
+          <p class="about">Zapret2 GUI использует <a href="#" data-url="https://github.com/bol-van/zapret2">zapret2</a> (bol-van, MIT), драйвер WinDivert и <a href="#" data-url="https://github.com/Flowseal/tg-ws-proxy">tg-ws-proxy</a> (Flowseal, MIT).<span id="tgVerAbout"></span> Антивирусы иногда ошибочно считают WinDivert опасным: это драйвер перехвата пакетов, а не вирус. Исходный код: <a href="#" data-url="https://github.com/raiyaxkrash/zapret2-rust">raiyaxkrash/zapret2-rust</a>.</p>
         </section>
       </main>
     </div>
