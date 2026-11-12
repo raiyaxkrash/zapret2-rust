@@ -194,7 +194,7 @@ function mockInvoke(cmd, args) {
   switch (cmd) {
     case "get_state": return Promise.resolve({
       status: { running: m.running, since: m.since, last_error: null, command_line: "", pid: null },
-      settings: m.settings, engine_version: "1.0.7", app_version: "1.4.0", conflicts: [], testing: false,
+      settings: m.settings, engine_version: "1.0.7", app_version: "2.0.0", conflicts: [], testing: false,
       data_dir: "C:\\Users\\user\\AppData\\Local\\Zapret2GUI", user_domains: 1, auto_domains: 0, autostart: m.settings.autostart,
       content_version: 2,
       app_update: new URLSearchParams(location.search).get("upd") ? { configured: true, available: true, current: "1.1.0", latest: "1.2.0", notes: "Меньше нагрузка на видеокарту" } : null,
@@ -212,7 +212,7 @@ function mockInvoke(cmd, args) {
       t.tx += (0.2 + 0.1 * Math.sin(t.n / 5)) * 1048576 * 2;
       return Promise.resolve({ rx: Math.round(t.rx), tx: Math.round(t.tx) });
     }
-    case "get_isp": return wait(300).then(() => ({ isp: { asn: 12389, name: "PJSC Rostelecom" }, hint: { asn: [12389], name: "Ростелеком", strategy: "seqovl", youtube_strategy: "" } }));
+    case "get_isp": return wait(300).then(() => ({ isp: { asn: 12389, name: "PJSC Rostelecom" }, hint: null }));
     case "save_settings": m.settings = args.new; return Promise.resolve(m.settings);
     case "get_command_line": return Promise.resolve("engine\\bin\\winws2.exe --wf-tcp-out=80,443 ...");
     case "read_list": return Promise.resolve(m.lists[args.name] || "");
@@ -247,6 +247,7 @@ function mockInvoke(cmd, args) {
       { id: "torrents", name: "Торрент-трекеры", icon: "download", description: "RuTracker, Rutor, NNM-Club, Kinozal и другие", domains: 11 },
       { id: "roblox", name: "Roblox", icon: "gamepad", description: "Сайт и игровые серверы Roblox", domains: 5 },
       { id: "signal", name: "Signal", icon: "chat", description: "Мессенджер Signal", domains: 7 },
+      { id: "hosting", name: "Зарубежные хостинги и CDN", icon: "server", kind: "ipset", description: "Сайты, игры и сервисы на Cloudflare, Hetzner, DigitalOcean, OVH, AWS и других хостингах", domains: 16346 },
       { id: "linkedin", name: "LinkedIn", icon: "briefcase", description: "Сайт и картинки LinkedIn", domains: 3 },
     ]);
     case "quick_check": return wait(900).then(() => ({ id: "now", checks: [

@@ -285,7 +285,7 @@ function renderPacks() {
       <div class="pack-top"><span class="pack-ico">${icon(p.icon || "globe")}</span><span class="pack-check">${icon("tick")}</span></div>
       <div class="pack-name">${esc(p.name)}</div>
       <div class="pack-desc">${esc(p.description)}</div>
-      <div class="pack-count">${p.kind === "ipset" ? `${p.domains} ${plural(p.domains, "подсеть", "подсети", "подсетей")}` : `${p.domains} ${plural(p.domains, "домен", "домена", "доменов")}`}</div>
+      <div class="pack-count">${p.kind === "ipset" ? `${p.domains.toLocaleString("ru-RU")} ${plural(p.domains, "подсеть", "подсети", "подсетей")}` : `${p.domains} ${plural(p.domains, "домен", "домена", "доменов")}`}</div>
     </button>`).join("");
   $$(".pack", box).forEach((b) => b.addEventListener("click", () => {
     const set = new Set(state.settings.packs || []);
@@ -983,7 +983,7 @@ onVisible(() => { if (!busy) refresh(); });
     render();
     if (demo.get("page")) goto(demo.get("page"));
     if (demo.get("wizard")) openWizard();
-    for (let i = 0; i < 180; i++) {
+    for (let i = 0; i < 300; i++) {
       trafRx.push((2.4 + 1.8 * Math.sin(i / 14) + 0.6 * Math.sin(i / 5.3) + Math.random() * 0.3) * 1048576);
       trafTx.push((0.25 + 0.12 * Math.sin(i / 6)) * 1048576);
     }

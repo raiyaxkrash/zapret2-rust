@@ -83,19 +83,22 @@ pub async fn detect() -> Result<Isp, String> {
 }
 
 /// Ссылка на новый issue с результатом подбора: из них пополняется таблица рекомендаций.
+/// Открывает шаблон .github/ISSUE_TEMPLATE/isp-strategy.yml и заполняет его поля
+/// (обычные issue без шаблона в репозитории отключены).
 pub fn share_url(isp: &Isp, strategy: &str, youtube_strategy: &str, app_version: &str) -> String {
     let title = format!("Стратегия для AS{} {}", isp.asn, isp.name);
-    let body = format!(
-        "Провайдер: {} (AS{})\nОсновная стратегия: {strategy}\nСтратегия для YouTube: {}\nВерсия приложения: {app_version}\n\nГород и тип подключения (по желанию):\n",
-        isp.name,
-        isp.asn,
-        if youtube_strategy.is_empty() { "как основная" } else { youtube_strategy }
-    );
-    format!(
-        "https://github.com/raiyaxkrash/zapret2-rust/issues/new?labels=isp-strategy&title={}&body={}",
-        encode(&title),
-        encode(&body)
-    )
+    let yt = if youtube_strategy.is_empty() { "как основная" } else { youtube_strategy };
+    let fields = [
+        ("template", "isp-strategy.yml".to_string()),
+        ("title", title),
+        ("provider", isp.name.clone()),
+        ("asn", format!("AS{}", isp.asn)),
+        ("strategy", strategy.to_string()),
+        ("youtube_strategy", yt.to_string()),
+        ("version", app_version.to_string()),
+    ];
+    let query: Vec<String> = fields.iter().map(|(k, v)| format!("{k}={}", encode(v))).collect();
+    format!("https://github.com/raiyaxkrash/zapret2-rust/issues/new?{}", query.join("&"))
 }
 
 fn encode(s: &str) -> String {
@@ -128,6 +131,6 @@ mod tests {
         assert!(find_hint(&hints, 1).is_none());
         let url = share_url(&Isp { asn: 12389, name: "PJSC Rostelecom".into() }, "seqovl", "", "1.6.0");
         assert!(url.starts_with("https://github.com/raiyaxkrash/zapret2-rust/issues/new?"));
-        assert!(url.contains("AS12389") && !url.contains(' '));
+        assert!(url.contains("template=isp-strategy.yml") && url.contains("asn=AS12389") && !url.contains(' '));
     }
 }

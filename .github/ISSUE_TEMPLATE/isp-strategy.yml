@@ -1,0 +1,43 @@
+name: Стратегия для провайдера
+description: Поделиться стратегией, которая заработала у вашего провайдера. Обычно заполняется кнопкой «Поделиться результатом» в приложении
+title: "Стратегия для провайдера"
+labels: [isp-strategy]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо! Из таких сообщений собираются подсказки «Для вашего провайдера обычно работает…» в приложении.
+        Поля ниже заполнены автоматически, проверьте их и нажмите «Submit new issue».
+  - type: input
+    id: provider
+    attributes:
+      label: Провайдер
+      placeholder: "PJSC Rostelecom"
+    validations:
+      required: true
+  - type: input
+    id: asn
+    attributes:
+      label: Номер AS
+      placeholder: "AS12389"
+    validations:
+      required: true
+  - type: input
+    id: strategy
+    attributes:
+      label: Основная стратегия
+    validations:
+      required: true
+  - type: input
+    id: youtube_strategy
+    attributes:
+      label: Стратегия для YouTube
+  - type: input
+    id: version
+    attributes:
+      label: Версия приложения
+  - type: input
+    id: details
+    attributes:
+      label: Город и тип подключения (по желанию)
+      placeholder: "Москва, домашний интернет"
