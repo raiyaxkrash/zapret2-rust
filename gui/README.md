@@ -100,14 +100,15 @@ npm run build
 Приложение ищет обновления по адресу `https://github.com/raiyaxkrash/zapret2-rust/releases/latest/download/latest.json` (константа `DEFAULT_APP_UPDATE_URL` в `src-tauri/src/settings.rs`; можно переопределить в Настройках → Обновления).
 
 1. Секрет репозитория `TAURI_SIGNING_PRIVATE_KEY` должен содержать `gui/.keys/zapret2gui.key` (Settings → Secrets and variables → Actions).
-2. Поднимите версию во всех файлах сразу и создайте коммит с тегом:
+2. Опишите изменения в `gui/release-notes/<версия>.md`: этот текст станет описанием релиза на GitHub. Если файла нет, будет стандартный текст.
+3. Поднимите версию во всех файлах сразу и создайте коммит с тегом:
 
    ```powershell
    .\gui\scripts\bump-version.ps1 1.4.0 -Tag
    git push origin main v1.4.0
    ```
 
-3. Workflow `.github/workflows/release.yml` проверит, что тег совпадает с версией, прогонит тесты, соберёт установщик и опубликует релиз вместе с `latest.json`.
+4. Workflow `.github/workflows/release.yml` проверит, что тег совпадает с версией, прогонит тесты, соберёт установщик и опубликует релиз вместе с `latest.json`.
 
 ## Тесты
 

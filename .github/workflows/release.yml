@@ -45,6 +45,16 @@ jobs:
         working-directory: gui
         run: npm ci
 
+      - name: Release notes
+        id: notes
+        shell: pwsh
+        run: |
+          $v = (Get-Content gui/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $file = "gui/release-notes/$v.md"
+          $body = if (Test-Path $file) { Get-Content $file -Raw -Encoding utf8 } else { "Скачайте установщик *-setup.exe ниже. Установленное приложение обновится само." }
+          $eof = "EOF_" + [guid]::NewGuid().ToString('N')
+          "body<<$eof`n$body`n$eof" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -54,6 +64,6 @@ jobs:
           projectPath: gui
           tagName: ${{ github.ref_name }}
           releaseName: "Zapret2 GUI ${{ github.ref_name }}"
-          releaseBody: "Скачайте установщик *-setup.exe ниже. Установленное приложение обновится само."
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: false
           includeUpdaterJson: true
