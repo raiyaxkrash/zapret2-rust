@@ -18,7 +18,7 @@ use crate::util::{hidden_command, join_args, now_unix};
 /// Job Object с флагом KILL_ON_JOB_CLOSE: дескриптор живёт, пока жив наш процесс.
 /// Когда приложение завершается (в том числе аварийно), Windows закрывает
 /// дескриптор и завершает все процессы в задании — winws2 не остаётся висеть.
-pub(crate) mod job {
+mod job {
     use std::{os::windows::io::AsRawHandle, process::Child, sync::OnceLock};
 
     use windows_sys::Win32::{

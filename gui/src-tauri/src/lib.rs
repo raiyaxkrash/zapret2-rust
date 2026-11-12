@@ -188,7 +188,7 @@ fn on_engine_crash(app: AppHandle) {
 
 fn tg_status(state: &AppState) -> TgProxyStatus {
     let s = state.settings.lock().unwrap();
-    state.tg.status(&state.paths.resources, s.tg_proxy_port, &s.tg_proxy_secret)
+    state.tg.status(s.tg_proxy_port, &s.tg_proxy_secret)
 }
 
 /// Приводит прокси для Telegram в соответствие с настройками: запускает,
@@ -207,26 +207,7 @@ async fn tg_apply(app: &AppHandle, restart: bool) -> CmdResult<()> {
     if state.tg.is_running() && !restart {
         return Ok(());
     }
-    state.tg.start(app, &state.paths.resources, port, &secret).await
-}
-
-/// Автоперезапуск прокси для Telegram после падения: не больше трёх раз за 5 минут.
-fn on_tg_crash(app: AppHandle) {
-    static CRASHES: Mutex<Vec<Instant>> = Mutex::new(Vec::new());
-    let allowed = {
-        let mut c = CRASHES.lock().unwrap();
-        c.retain(|t| t.elapsed() < Duration::from_secs(300));
-        c.push(Instant::now());
-        c.len() <= 3
-    };
-    tauri::async_runtime::spawn(async move {
-        if !allowed {
-            let _ = app.emit("toast", "Прокси для Telegram несколько раз неожиданно завершился. Подробности в журнале.");
-            return;
-        }
-        tokio::time::sleep(Duration::from_secs(2)).await;
-        let _ = tg_apply(&app, false).await;
-    });
+    state.tg.start(app, port, &secret).await
 }
 
 fn stop_all(app: &AppHandle) {
@@ -772,7 +753,7 @@ async fn install_app_update(app: AppHandle) -> CmdResult<()> {
         )
         .await
         .map_err(|e| format!("Ошибка загрузки обновления: {e}"))?;
-    // Перед установкой останавливаем winws2 и прокси для Telegram: их файлы будут заменены.
+    // Перед установкой останавливаем winws2 (его файлы будут заменены) и прокси для Telegram.
     stop_all(&app);
     update.install(bytes).map_err(|e| format!("Ошибка установки: {e}"))?;
     app.restart();
@@ -874,7 +855,6 @@ pub fn run() {
 
             // Остатки прошлого запуска (например, после аварийного завершения).
             let _ = util::hidden_command("taskkill").args(["/F", "/IM", "winws2.exe"]).output();
-            let _ = util::hidden_command("taskkill").args(["/F", "/IM", "tg-ws-proxy.exe"]).output();
             if let Err(e) = paths.sync_resources() {
                 eprintln!("sync resources: {e}");
             }
@@ -904,8 +884,6 @@ pub fn run() {
                 handle.listen_any("engine-state", move |_| update_tray(&h));
                 let h = handle.clone();
                 handle.listen_any("engine-crashed", move |_| on_engine_crash(h.clone()));
-                let h = handle.clone();
-                handle.listen_any("tg-proxy-crashed", move |_| on_tg_crash(h.clone()));
             }
 
             if !(autostarted && settings.start_minimized) {

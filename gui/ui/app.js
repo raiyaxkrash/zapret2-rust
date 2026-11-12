@@ -319,7 +319,6 @@ function renderTgProxy() {
     : !on ? "Приложение Telegram подключится через WebSocket, без настройки обхода"
     : tg.running ? `Работает на 127.0.0.1:${tg.port}`
     : failed ? "Не запущен" : "Запуск…";
-  $("#tgVerAbout").textContent = tg.version ? ` Версия tg-ws-proxy: ${tg.version}.` : "";
 }
 
 $("#tgOpen").addEventListener("click", async () => {

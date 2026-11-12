@@ -197,7 +197,7 @@ function mockInvoke(cmd, args) {
       data_dir: "C:\\Users\\user\\AppData\\Local\\Zapret2GUI", user_domains: 1, auto_domains: 0, autostart: m.settings.autostart,
       content_version: 2,
       app_update: new URLSearchParams(location.search).get("upd") ? { configured: true, available: true, current: "1.1.0", latest: "1.2.0", notes: "Меньше нагрузка на видеокарту" } : null,
-      tg_proxy: { available: true, running: !!m.settings.tg_proxy, since: null, last_error: null, port: m.settings.tg_proxy_port, link: `tg://proxy?server=127.0.0.1&port=${m.settings.tg_proxy_port}&secret=dd${m.settings.tg_proxy_secret}`, version: "1.11.4" },
+      tg_proxy: { available: true, running: !!m.settings.tg_proxy, since: null, last_error: null, port: m.settings.tg_proxy_port, link: `tg://proxy?server=127.0.0.1&port=${m.settings.tg_proxy_port}&secret=dd${m.settings.tg_proxy_secret}` },
       platform: { arm64: !!new URLSearchParams(location.search).get("arm"), testsigning: false, secure_boot: false, build: 26100, mica: false, accent: { dark_theme: "#4cc2ff", light_theme: "#005fb8" } },
     });
     case "start_engine": return wait(900).then(() => { m.running = true; m.since = Math.floor(Date.now() / 1000); });
