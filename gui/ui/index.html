@@ -113,26 +113,7 @@
             </div>
           </div>
 
-          <h2 class="section-title">Наборы сайтов</h2>
-          <div class="packs" id="packs"></div>
 
-          <h2 class="section-title">Параметры</h2>
-          <div class="settings-group">
-            <div class="setting" id="customModeCard">
-              <span data-icon="globe"></span>
-              <div class="setting-text"><div class="setting-title">Режим «Мои сайты»</div><div class="setting-desc">Как выбирать сайты, к которым применяется обход</div></div>
-              <div class="segmented" id="customMode">
-                <button data-mode="list">Только список</button>
-                <button data-mode="auto">Список + авто</button>
-                <button data-mode="all">Все сайты</button>
-              </div>
-            </div>
-            <label class="setting">
-              <span data-icon="flash"></span>
-              <div class="setting-text"><div class="setting-title">QUIC / HTTP3</div><div class="setting-desc">Вкл. — обход и для QUIC. Откл. — QUIC к YouTube и Discord блокируется, и браузер сразу переходит на TCP. Если видео не грузится, попробуйте выключить</div></div>
-              <div class="setting-control"><span class="state-label"></span><span class="switch"><input type="checkbox" data-setting="quic" /><i></i></span></div>
-            </label>
-          </div>
         </section>
 
         <!-- ============================== STRATEGIES -->
@@ -147,6 +128,8 @@
               <button class="btn primary" id="testBtn"><span data-icon="wand"></span>Подобрать автоматически</button>
             </div>
           </div>
+
+          <div class="isp-line" id="ispLine" hidden></div>
 
           <form class="add-site site-check" id="siteCheck">
             <span data-icon="search"></span>
@@ -172,6 +155,11 @@
             <div class="setting-text"><div class="setting-title">Стратегия для YouTube</div><div class="setting-desc">Серверам Google часто нужна другая стратегия, чем Discord и остальным сайтам</div></div>
             <div class="select-wrap" style="width:300px"><select id="ytStrategy"></select><span class="select-chev" data-icon="chevron"></span></div>
           </div>
+          <label class="setting" style="margin-bottom:16px">
+            <span data-icon="flash"></span>
+            <div class="setting-text"><div class="setting-title">QUIC / HTTP3</div><div class="setting-desc">Вкл. — обход и для QUIC. Откл. — QUIC к YouTube и Discord блокируется, и браузер сразу переходит на TCP. Если видео не грузится, попробуйте выключить</div></div>
+            <div class="setting-control"><span class="state-label"></span><span class="switch"><input type="checkbox" data-setting="quic" /><i></i></span></div>
+          </label>
 
           <h2 class="section-title" style="margin-top:0">Основная стратегия</h2>
           <div class="strategy-list" id="strategyList"></div>
@@ -196,7 +184,21 @@
               <button class="btn" id="openListsDir"><span data-icon="folder"></span>Открыть папку</button>
             </div>
           </div>
-          <form class="add-site" data-list="user" style="margin-top:0">
+          <h2 class="section-title" style="margin-top:0">Наборы сайтов</h2>
+          <div class="packs" id="packs"></div>
+
+          <div class="settings-group" style="margin-top:24px">
+            <div class="setting" id="customModeCard">
+              <span data-icon="globe"></span>
+              <div class="setting-text"><div class="setting-title">Режим «Мои сайты»</div><div class="setting-desc">Как выбирать сайты, к которым применяется обход</div></div>
+              <div class="segmented" id="customMode">
+                <button data-mode="list">Только список</button>
+                <button data-mode="auto">Список + авто</button>
+                <button data-mode="all">Все сайты</button>
+              </div>
+            </div>
+          </div>
+          <form class="add-site" data-list="user">
             <span data-icon="globe"></span>
             <input type="text" placeholder="Добавить в «Мои сайты»: вставьте ссылку или домен" spellcheck="false" />
             <button class="btn small primary" type="submit">Добавить</button>
@@ -305,12 +307,42 @@
             <div class="setting"><span data-icon="download"></span><div class="setting-text"><div class="setting-title">Источник обновлений приложения</div><div class="setting-desc">Адрес файла latest.json</div></div>
               <div class="field-row" style="max-width:460px"><input id="updateUrl" type="url" /><button class="btn" id="saveUpdateUrl">Сохранить</button></div>
             </div>
+            <div class="setting"><span data-icon="wand"></span><div class="setting-text"><div class="setting-title">Мастер настройки</div><div class="setting-desc">Заново выбрать, что не открывается, и подобрать стратегию</div></div><button class="btn" id="openWizard">Открыть</button></div>
             <div class="setting"><span data-icon="folder"></span><div class="setting-text"><div class="setting-title">Папка с данными</div><div class="setting-desc" id="dataDir"></div></div><button class="btn" id="openDataDir">Открыть</button></div>
           </div>
 
           <p class="about">Zapret2 GUI использует <a href="#" data-url="https://github.com/bol-van/zapret2">zapret2</a> (bol-van, MIT), драйвер WinDivert. Прокси для Telegram — собственная реализация протокола <a href="#" data-url="https://github.com/Flowseal/tg-ws-proxy">tg-ws-proxy</a> (Flowseal, MIT); как запасной путь он использует Cloudflare-серверы проекта tg-ws-proxy. Антивирусы иногда ошибочно считают WinDivert опасным: это драйвер перехвата пакетов, а не вирус. Исходный код: <a href="#" data-url="https://github.com/raiyaxkrash/zapret2-rust">raiyaxkrash/zapret2-rust</a>.</p>
         </section>
       </main>
+    </div>
+  </div>
+
+  <div class="wizard" id="wizard" hidden>
+    <div class="wizard-card">
+      <div class="wizard-step" data-step="1">
+        <h2>Что у вас не открывается?</h2>
+        <p class="muted">Отметьте нужное, и Zapret2 сам подберёт настройки. Это займёт около минуты.</p>
+        <div class="packs wizard-choices" id="wizChoices"></div>
+        <div class="wizard-actions">
+          <button class="btn subtle" id="wizSkip">Пропустить</button>
+          <button class="btn primary" id="wizNext">Настроить</button>
+        </div>
+      </div>
+      <div class="wizard-step" data-step="2" hidden>
+        <h2 id="wizWorkTitle">Настраиваем…</h2>
+        <p class="muted" id="wizWorkSub"></p>
+        <div class="progress"><div class="progress-bar" id="wizBar"></div></div>
+      </div>
+      <div class="wizard-step" data-step="3" hidden>
+        <h2 id="wizDoneTitle">Готово</h2>
+        <div class="status-items" id="wizResult"></div>
+        <p class="muted" id="wizDoneSub"></p>
+        <div class="wizard-actions">
+          <button class="btn subtle small" id="wizShare" hidden>Поделиться результатом</button>
+          <button class="btn" id="wizTg" hidden><span data-icon="send"></span>Подключить в Telegram</button>
+          <button class="btn primary" id="wizDone">Готово</button>
+        </div>
+      </div>
     </div>
   </div>
 

@@ -22,7 +22,7 @@ pub struct Strategy {
     pub quic: Option<Vec<String>>,
 }
 
-/// Готовый набор сайтов (Telegram, Instagram…): список доменов в lists/packs/<id>.txt.
+/// Готовый набор сайтов (Telegram, Instagram…): список в lists/packs/<id>.txt.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Pack {
     pub id: String,
@@ -31,6 +31,18 @@ pub struct Pack {
     pub description: String,
     #[serde(default)]
     pub icon: String,
+    /// "" — список доменов, "ipset" — список подсетей (блокировка по IP, например зарубежных хостингов).
+    #[serde(default)]
+    pub kind: String,
+    /// Адреса для проверки доступности (быстрая проверка и автоподбор).
+    #[serde(default)]
+    pub check: Vec<String>,
+}
+
+impl Pack {
+    pub fn is_ipset(&self) -> bool {
+        self.kind == "ipset"
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -40,6 +52,9 @@ pub struct Presets {
     pub strategies: Vec<Strategy>,
     #[serde(default)]
     pub packs: Vec<Pack>,
+    /// Рекомендуемые стратегии для провайдеров (по номеру AS).
+    #[serde(default)]
+    pub isp: Vec<crate::isp::IspHint>,
 }
 
 /// id набора — только латиница, цифры, «-» и «_» (используется как имя файла).
@@ -133,13 +148,24 @@ pub fn build_args(settings: &Settings, presets: &Presets, strategy: &Strategy, y
         need_quic = true;
         profiles.push(if settings.quic { quic_profile(s, &f) } else { quic_block(&f) });
     }
-    // Готовые наборы сайтов: один профиль со всеми включёнными списками.
-    let pack_lists: Vec<String> = settings
+    // Готовые наборы сайтов: один профиль со всеми включёнными списками доменов
+    // и отдельный — со списками подсетей.
+    let enabled_packs: Vec<&String> = settings
         .packs
         .iter()
         .filter(|id| valid_pack_id(id))
         .filter(|id| count_domains(&paths.lists.join("packs").join(format!("{id}.txt"))) > 0)
+        .collect();
+    let is_ipset = |id: &str| presets.packs.iter().any(|p| p.id == id && p.is_ipset());
+    let pack_lists: Vec<String> = enabled_packs
+        .iter()
+        .filter(|id| !is_ipset(id))
         .map(|id| format!("--hostlist=lists/packs/{id}.txt"))
+        .collect();
+    let ipset_lists: Vec<String> = enabled_packs
+        .iter()
+        .filter(|id| is_ipset(id))
+        .map(|id| format!("--ipset=lists/packs/{id}.txt"))
         .collect();
     if !pack_lists.is_empty() {
         let mut f = pack_lists;
@@ -148,6 +174,16 @@ pub fn build_args(settings: &Settings, presets: &Presets, strategy: &Strategy, y
         profiles.push(tcp_profile(strategy, YT_TCP, &f));
         need_quic = true;
         profiles.push(if settings.quic { quic_profile(strategy, &f) } else { quic_block(&f) });
+    }
+    // Блокировка по IP (зарубежные хостинги и CDN): только TLS на 443, QUIC не трогаем,
+    // чтобы не ломать сайты, у которых с ним всё в порядке.
+    if !ipset_lists.is_empty() {
+        let mut p = vec!["--filter-tcp=443".to_string(), "--filter-l7=tls".to_string()];
+        p.extend(ipset_lists);
+        p.push("--hostlist-exclude=lists/exclude.txt".to_string());
+        p.extend(strategy.tls.iter().cloned());
+        tcp_ports.push("443");
+        profiles.push(p);
     }
     if settings.discord_voice {
         let mut p = vec![
@@ -288,7 +324,15 @@ mod tests {
             quic_default: vec!["--lua-desync=quic_default".into()],
             discord_voice: vec!["--lua-desync=voice".into()],
             strategies: vec![s("main"), s("yt")],
-            packs: vec![],
+            packs: vec![Pack {
+                id: "hosting".into(),
+                name: "Хостинги".into(),
+                description: String::new(),
+                icon: String::new(),
+                kind: "ipset".into(),
+                check: vec![],
+            }],
+            isp: vec![],
         };
         (paths, presets)
     }
@@ -373,5 +417,25 @@ mod tests {
         // Профиль проверяемого сайта идёт первым.
         let first = &profiles(&args)[0];
         assert!(first.contains(&"--hostlist-domains=example.com".into()));
+    }
+
+    #[test]
+    fn ipset_pack_gets_tls_only_profile() {
+        let (paths, presets) = setup("y");
+        let _ = fs::create_dir_all(paths.lists.join("packs"));
+        fs::write(paths.lists.join("packs").join("hosting.txt"), "# comment\n1.1.1.0/24\n2a06:98c0::/29\n").unwrap();
+        fs::write(paths.lists.join("packs").join("telegram.txt"), "t.me\n").unwrap();
+        let settings = Settings { youtube: false, discord: false, packs: vec!["hosting".into(), "telegram".into()], ..base() };
+        let args = build_args(&settings, &presets, &s("main"), &s("main"), &paths).unwrap();
+        let p = profiles(&args);
+        let ip = p.iter().find(|p| p.contains(&"--ipset=lists/packs/hosting.txt".into())).unwrap();
+        assert_eq!(ip[0], "--filter-tcp=443");
+        assert!(ip.contains(&"--filter-l7=tls".into()));
+        assert!(ip.contains(&"--lua-desync=tls_main".into()));
+        assert!(!ip.contains(&"--lua-desync=http_main".into()));
+        // Набор подсетей не попадает в профиль доменов, и для него нет QUIC-профиля.
+        assert!(!args.contains(&"--hostlist=lists/packs/hosting.txt".into()));
+        assert!(args.contains(&"--hostlist=lists/packs/telegram.txt".into()));
+        assert_eq!(p.iter().filter(|p| p[0] == "--filter-udp=443").count(), 1);
     }
 }

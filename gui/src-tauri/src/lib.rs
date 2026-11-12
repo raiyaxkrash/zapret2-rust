@@ -1,6 +1,7 @@
 mod autostart;
 mod content;
 mod engine;
+mod isp;
 mod paths;
 mod platform;
 mod presets;
@@ -47,6 +48,8 @@ pub struct AppState {
     flyout_hidden_at: Mutex<Option<Instant>>,
     /// Найденное обновление приложения (для значка в интерфейсе).
     app_update: Mutex<Option<AppUpdateInfo>>,
+    /// Провайдер, определённый за этот запуск.
+    isp: Mutex<Option<isp::Isp>>,
 }
 
 type CmdResult<T> = Result<T, String>;
@@ -644,6 +647,43 @@ fn tg_proxy_open(state: State<'_, AppState>) -> CmdResult<()> {
     Ok(())
 }
 
+// ---------------------------------------------------------------- провайдер
+
+#[derive(Serialize)]
+struct IspInfo {
+    isp: isp::Isp,
+    /// Рекомендуемая стратегия для этого провайдера, если она известна.
+    hint: Option<isp::IspHint>,
+}
+
+#[tauri::command]
+async fn get_isp(app: AppHandle) -> CmdResult<IspInfo> {
+    let state = app.state::<AppState>();
+    let cached = state.isp.lock().unwrap().clone();
+    let isp = match cached {
+        Some(i) => i,
+        None => {
+            let i = isp::detect().await?;
+            *state.isp.lock().unwrap() = Some(i.clone());
+            i
+        }
+    };
+    let hint = Presets::load(&state.paths).ok().and_then(|p| isp::find_hint(&p.isp, isp.asn).cloned());
+    Ok(IspInfo { isp, hint })
+}
+
+/// Открывает заполненный issue на GitHub с провайдером и выбранными стратегиями.
+#[tauri::command]
+async fn share_isp_result(app: AppHandle) -> CmdResult<()> {
+    let info = get_isp(app.clone()).await?;
+    let state = app.state::<AppState>();
+    let settings = state.settings.lock().unwrap().clone();
+    let presets = Presets::load(&state.paths)?;
+    let name = |id: &str| presets.find(&settings, id).map(|s| format!("{} ({id})", s.name)).unwrap_or_default();
+    let url = isp::share_url(&info.isp, &name(&settings.strategy), &name(&settings.youtube_strategy), &app.package_info().version.to_string());
+    open_url(url)
+}
+
 // ---------------------------------------------------------------- zapret2 updates
 
 #[tauri::command]
@@ -873,6 +913,7 @@ pub fn run() {
                 tray_toggle: Mutex::new(None),
                 flyout_hidden_at: Mutex::new(None),
                 app_update: Mutex::new(None),
+                isp: Mutex::new(None),
             });
 
             platform::apply_theme(&handle, &settings.theme);
@@ -971,6 +1012,8 @@ pub fn run() {
             update_content,
             tg_proxy_start,
             tg_proxy_open,
+            get_isp,
+            share_isp_result,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

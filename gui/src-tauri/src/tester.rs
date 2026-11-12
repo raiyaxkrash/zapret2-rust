@@ -84,6 +84,14 @@ pub fn targets(settings: &Settings, state: &AppState) -> Vec<(String, String)> {
             add("custom", &format!("https://{}/", d.trim_start_matches("*.")));
         }
     }
+    // Наборы с собственными адресами проверки (например, зарубежные хостинги).
+    if let Ok(presets) = Presets::load(&state.paths) {
+        for pack in presets.packs.iter().filter(|p| settings.packs.contains(&p.id)) {
+            for url in pack.check.iter().filter(|u| u.starts_with("https://")).take(4) {
+                add(&pack.id, url);
+            }
+        }
+    }
     t
 }
 

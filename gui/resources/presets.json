@@ -1,5 +1,6 @@
 {
-  "version": 3,
+  "version": 4,
+  "isp": [],
   "packs": [
     { "id": "telegram", "name": "Telegram", "icon": "send", "description": "Сайт, веб-версия, ссылки t.me. Само приложение использует свой протокол: если оно не подключается, включите в нём прокси" },
     { "id": "meta", "name": "Instagram и Facebook", "icon": "camera", "description": "Instagram, Facebook, WhatsApp, Threads" },
@@ -7,6 +8,7 @@
     { "id": "torrents", "name": "Торрент-трекеры", "icon": "download", "description": "RuTracker, Rutor, NNM-Club, Kinozal и другие" },
     { "id": "roblox", "name": "Roblox", "icon": "gamepad", "description": "Сайт и игровые серверы Roblox" },
     { "id": "signal", "name": "Signal", "icon": "chat", "description": "Мессенджер Signal" },
+    { "id": "hosting", "name": "Зарубежные хостинги и CDN", "icon": "server", "kind": "ipset", "description": "Сайты, игры и сервисы на Cloudflare, Hetzner, DigitalOcean, OVH, AWS и других хостингах, которые обрываются или грузятся бесконечно", "check": ["https://speed.cloudflare.com/__down?bytes=200000", "https://fsn1-speed.hetzner.com/100MB.bin", "https://proof.ovh.net/files/1Mb.dat", "https://fra-de-ping.vultr.com/vultr.com.100MB.bin"] },
     { "id": "linkedin", "name": "LinkedIn", "icon": "briefcase", "description": "Сайт и картинки LinkedIn" }
   ],
   "quic_default": [

@@ -46,7 +46,7 @@ function goto(page) {
   $$(".nav-item").forEach((b) => b.classList.toggle("active", b.dataset.page === page));
   $$(".page").forEach((p) => p.classList.toggle("active", p.id === `page-${page}`));
   $(".content").scrollTop = 0;
-  if (page === "strategies") loadCommandLine();
+  if (page === "strategies") { loadCommandLine(); loadIsp(); }
   if (page === "lists") loadList(currentList);
   if (page === "logs") scrollLog();
 }
@@ -102,13 +102,8 @@ function render() {
   if (pf?.arm64 && !pf.testsigning) {
     banners.push(`<div class="infobar warn">${icon("chip")}<div><b>Компьютер на ARM64.</b> Для ARM64 нет подписанного драйвера WinDivert, поэтому Windows загрузит его только в режиме тестовой подписи. ${pf.secure_boot ? "Сначала выключите Secure Boot в настройках UEFI/BIOS, затем включите тестовый режим здесь." : "Включите тестовый режим и перезагрузите компьютер."}</div><button class="btn small" id="armTs"${pf.secure_boot ? " disabled" : ""}>Включить тестовый режим</button></div>`);
   }
-  if (showOnboarding()) {
-    banners.push(`<div class="infobar info">${icon("wand")}<div><b>Первый запуск?</b> У разных провайдеров работают разные стратегии. Подбор займёт около минуты и найдёт лучшую для YouTube и Discord.</div><button class="btn small primary" id="obStart">Подобрать</button><button class="btn small subtle" id="obHide">Скрыть</button></div>`);
-  }
   $("#banners").innerHTML = banners.join("");
   $("#armTs")?.addEventListener("click", enableTestsigning);
-  $("#obStart")?.addEventListener("click", () => { hideOnboarding(); goto("strategies"); runTest(); });
-  $("#obHide")?.addEventListener("click", () => { hideOnboarding(); render(); });
   $("#killConflicts")?.addEventListener("click", killConflicts);
   $$("#banners [data-goto]").forEach((b) => b.addEventListener("click", () => goto(b.dataset.goto)));
 
@@ -260,7 +255,7 @@ async function runQuickCheck() {
       const cls = ok.length === list.length ? "good" : ok.length ? "mid" : "bad";
       const ms = ok.length ? Math.round(ok.reduce((a, c) => a + c.ms, 0) / ok.length) : 0;
       const meta = cls === "bad" ? "не открывается" : `${ok.length}/${list.length} · ${ms} мс`;
-      return statusItem(SERVICE_NAMES[svc] || svc, cls, meta);
+      return statusItem(SERVICE_NAMES[svc] || packs.find((p) => p.id === svc)?.name || svc, cls, meta);
     }).join("");
     $("#checkTime").textContent = `Проверено в ${new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}${state.status.running ? "" : " · обход выключен"}`;
   } catch (e) {
@@ -288,7 +283,7 @@ function renderPacks() {
       <div class="pack-top"><span class="pack-ico">${icon(p.icon || "globe")}</span><span class="pack-check">${icon("tick")}</span></div>
       <div class="pack-name">${esc(p.name)}</div>
       <div class="pack-desc">${esc(p.description)}</div>
-      <div class="pack-count">${p.domains} ${plural(p.domains, "домен", "домена", "доменов")}</div>
+      <div class="pack-count">${p.kind === "ipset" ? `${p.domains} ${plural(p.domains, "подсеть", "подсети", "подсетей")}` : `${p.domains} ${plural(p.domains, "домен", "домена", "доменов")}`}</div>
     </button>`).join("");
   $$(".pack", box).forEach((b) => b.addEventListener("click", () => {
     const set = new Set(state.settings.packs || []);
@@ -551,13 +546,163 @@ function finishTest() {
   }
   const foot = $("#testFoot");
   foot.hidden = false;
-  foot.innerHTML = `<div>${lines.map(esc).join("<br>")}</div>${Object.keys(patch).length ? `<button class="btn primary" id="applyBest">Применить</button>` : ""}`;
+  const canShare = !report.site && !report.cancelled && (best || bestYt);
+  const shareBtn = `<button class="btn subtle small" id="shareResult" title="Откроет на GitHub заполненное сообщение: провайдер и стратегии. Так другие пользователи с тем же провайдером получат подсказку">Поделиться результатом</button>`;
+  foot.innerHTML = `<div>${lines.map(esc).join("<br>")}</div>${Object.keys(patch).length ? `<button class="btn primary" id="applyBest">Применить</button>` : canShare ? shareBtn : ""}`;
+  const bindShare = () => $("#shareResult")?.addEventListener("click", async () => {
+    try { await invoke("share_isp_result"); } catch (e) { toast(errText(e), "err"); }
+  });
+  bindShare();
   $("#applyBest")?.addEventListener("click", async () => {
     await saveSettings(patch, { quiet: true });
     toast("Стратегии применены");
-    $("#applyBest")?.remove();
+    if (canShare) { $("#applyBest").outerHTML = shareBtn; bindShare(); } else $("#applyBest")?.remove();
     renderStrategies();
     loadCommandLine();
+  });
+}
+
+/* ===================================================================== мастер первого запуска */
+const WIZ_CHOICES = [
+  { id: "youtube", name: "YouTube", icon: "play", desc: "Сайт, видео и превью" },
+  { id: "discord", name: "Discord", icon: "chat", desc: "Сайт, приложение и голосовые каналы" },
+  { id: "telegram", name: "Telegram", icon: "send", desc: "Приложение Telegram Desktop" },
+  { id: "meta", name: "Instagram и Facebook", icon: "camera", desc: "Instagram, Facebook, WhatsApp" },
+  { id: "hosting", name: "Другие сайты и игры", icon: "server", desc: "Грузятся бесконечно или обрываются" },
+];
+let wizPicked = new Set(["youtube", "discord"]);
+const wizardOpen = () => !$("#wizard").hidden;
+
+function wizStep(n) { $$(".wizard-step").forEach((el) => { el.hidden = el.dataset.step !== String(n); }); }
+
+function openWizard() {
+  const s = state.settings;
+  wizPicked = new Set(WIZ_CHOICES.map((c) => c.id).filter((id) =>
+    id === "telegram" ? s.tg_proxy : ["youtube", "discord"].includes(id) ? s[id] : (s.packs || []).includes(id)));
+  if (!wizPicked.size) wizPicked = new Set(["youtube", "discord"]);
+  $("#wizChoices").innerHTML = WIZ_CHOICES.map((c) => `
+    <button class="pack ${wizPicked.has(c.id) ? "on" : ""}" data-id="${c.id}">
+      <div class="pack-top"><span class="pack-ico">${icon(c.icon)}</span><span class="pack-check">${icon("tick")}</span></div>
+      <div class="pack-name">${esc(c.name)}</div>
+      <div class="pack-desc">${esc(c.desc)}</div>
+    </button>`).join("");
+  $$("#wizChoices .pack").forEach((b) => b.addEventListener("click", () => {
+    wizPicked.has(b.dataset.id) ? wizPicked.delete(b.dataset.id) : wizPicked.add(b.dataset.id);
+    b.classList.toggle("on");
+    $("#wizNext").disabled = !wizPicked.size;
+  }));
+  $("#wizNext").disabled = !wizPicked.size;
+  wizStep(1);
+  $("#wizard").hidden = false;
+}
+function closeWizard() { $("#wizard").hidden = true; hideOnboarding(); refresh(); }
+
+/* Сводка быстрой проверки: строки «YouTube · 3/3». */
+function wizSummary(r) {
+  const by = {};
+  for (const c of r.checks) (by[c.service] ||= []).push(c);
+  const items = Object.entries(by).map(([svc, list]) => {
+    const ok = list.filter((c) => c.ok).length;
+    const cls = ok === list.length ? "good" : ok ? "mid" : "bad";
+    return { ok: cls !== "bad", good: cls === "good", html: statusItem(SERVICE_NAMES[svc] || packs.find((p) => p.id === svc)?.name || svc, cls, cls === "bad" ? "не открывается" : `${ok}/${list.length}`) };
+  });
+  return { allOk: items.every((i) => i.ok), allGood: items.every((i) => i.good), html: items.map((i) => i.html).join("") };
+}
+
+async function runWizard() {
+  wizStep(2);
+  const work = (title, sub, pct) => { $("#wizWorkTitle").textContent = title; $("#wizWorkSub").textContent = sub; if (pct != null) $("#wizBar").style.width = `${pct}%`; };
+  work("Применяем настройки…", "", 5);
+  const yt = wizPicked.has("youtube"), dc = wizPicked.has("discord");
+  const packIds = WIZ_CHOICES.map((c) => c.id).filter((id) => !["youtube", "discord", "telegram"].includes(id));
+  const keepPacks = (state.settings.packs || []).filter((id) => !packIds.includes(id));
+  const patch = {
+    youtube: yt, discord: dc, discord_voice: dc,
+    packs: [...keepPacks, ...packIds.filter((id) => wizPicked.has(id))],
+    tg_proxy: wizPicked.has("telegram"),
+  };
+  // Только Telegram: обход не нужен, хватит прокси.
+  const needEngine = yt || dc || patch.packs.length > 0 || state.settings.custom;
+  let shared = false;
+  try {
+    await saveSettings(patch, { quiet: true });
+    if (needEngine) {
+      // Рекомендация для провайдера: пробуем её первой.
+      work("Определяем провайдера…", "", 12);
+      try { isp = isp || await invoke("get_isp"); } catch {}
+      if (isp?.hint) {
+        work("Пробуем стратегию для вашего провайдера…", isp.hint.name, 20);
+        await saveSettings({ strategy: isp.hint.strategy, youtube_strategy: isp.hint.youtube_strategy || "" }, { quiet: true });
+      }
+      if (!state.status.running) await invoke("start_engine");
+      let check = await invoke("quick_check");
+      if (!wizSummary(check).allOk) {
+        work("Подбираем стратегию…", "Каждая стратегия проверяется по очереди", 25);
+        await runTest();
+        if (report && (report.best || report.best_youtube)) {
+          const p = {};
+          if (report.best) p.strategy = report.best;
+          if (report.best_youtube) p.youtube_strategy = report.best_youtube === (p.strategy || state.settings.strategy) ? "" : report.best_youtube;
+          await saveSettings(p, { quiet: true });
+          shared = true;
+        }
+        if (!state.status.running) await invoke("start_engine");
+        work("Проверяем результат…", "", 100);
+        check = await invoke("quick_check");
+      }
+      const sum = wizSummary(check);
+      $("#wizResult").innerHTML = sum.html;
+      $("#wizDoneTitle").textContent = sum.allGood ? "Готово, всё открывается" : sum.allOk ? "Готово" : "Готово, но не всё открывается";
+      $("#wizDoneSub").textContent = sum.allOk ? "Обход включён и будет запускаться вместе с программой."
+        : "Попробуйте выключить QUIC на странице «Стратегии» или добавить проблемные сайты в «Мои сайты».";
+    } else {
+      $("#wizResult").innerHTML = "";
+      $("#wizDoneTitle").textContent = "Готово";
+      $("#wizDoneSub").textContent = "";
+    }
+  } catch (e) {
+    $("#wizResult").innerHTML = "";
+    $("#wizDoneTitle").textContent = "Не получилось";
+    $("#wizDoneSub").textContent = errText(e);
+  }
+  await refresh();
+  const tg = wizPicked.has("telegram");
+  $("#wizTg").hidden = !tg || !state.tg_proxy?.running;
+  if (tg && state.tg_proxy?.running) $("#wizDoneSub").textContent += ($("#wizDoneSub").textContent ? " " : "") + "Для Telegram нажмите «Подключить в Telegram» и подтвердите в приложении.";
+  $("#wizShare").hidden = !shared;
+  wizStep(3);
+}
+
+$("#wizNext").addEventListener("click", runWizard);
+$("#wizSkip").addEventListener("click", closeWizard);
+$("#wizDone").addEventListener("click", closeWizard);
+$("#wizTg").addEventListener("click", () => $("#tgOpen").click());
+$("#wizShare").addEventListener("click", async () => { try { await invoke("share_isp_result"); } catch (e) { toast(errText(e), "err"); } });
+$("#openWizard").addEventListener("click", openWizard);
+
+/* ===================================================================== провайдер */
+let isp = null;
+async function loadIsp() {
+  if (isp) return renderIsp();
+  try { isp = await invoke("get_isp"); } catch { return; }
+  renderIsp();
+}
+function renderIsp() {
+  const el = $("#ispLine");
+  if (!isp || !state) return;
+  const h = isp.hint;
+  const s = state.settings;
+  const name = h?.name || isp.isp.name || "неизвестен";
+  const hintName = h && strategies.find((x) => x.id === h.strategy)?.name;
+  const applied = h && s.strategy === h.strategy && (s.youtube_strategy || "") === (h.youtube_strategy || "");
+  el.innerHTML = `${icon("globe")}<span>Провайдер: <b>${esc(name)}</b> · AS${isp.isp.asn}</span>`
+    + (hintName && !applied ? `<span class="isp-hint">Для него обычно работает «${esc(hintName)}»</span><button class="btn small" id="applyIsp">Применить</button>` : "")
+    + (hintName && applied ? `<span class="isp-hint">Выбрана рекомендуемая стратегия</span>` : "");
+  el.hidden = false;
+  $("#applyIsp")?.addEventListener("click", async () => {
+    await saveSettings({ strategy: h.strategy, youtube_strategy: h.youtube_strategy || "" }, { quiet: true });
+    toast("Применена стратегия для вашего провайдера");
+    renderStrategies(); loadCommandLine(); renderIsp();
   });
 }
 
@@ -566,6 +711,10 @@ $("#cancelTestBtn").addEventListener("click", () => invoke("cancel_strategy_test
 listen("start-test", () => { goto("strategies"); runTest(); });
 
 listen("test-progress", ({ payload: p }) => {
+  if (wizardOpen()) {
+    $("#wizBar").style.width = `${Math.round((Math.min(p.index, p.total) / p.total) * 100)}%`;
+    if (p.current) $("#wizWorkSub").textContent = `Проверяем: ${p.current}`;
+  }
   if (!testRows.length) return;
   if (p.result) {
     const row = testRows.find((r) => r.id === p.result.id);
@@ -763,12 +912,14 @@ onVisible(() => { if (!busy) refresh(); });
   await loadPacks();
   try { (await invoke("get_logs")).forEach((l) => logLine(l, false)); } catch {}
   if (state?.testing) { testing = true; render(); }
+  if (TAURI && state && showOnboarding()) openWizard();
   // Демо-режим для скриншотов (только в браузере, без Tauri).
   const demo = !TAURI && new URLSearchParams(location.search);
   if (demo && demo.get("demo")) {
     hideOnboarding();
     render();
     if (demo.get("page")) goto(demo.get("page"));
+    if (demo.get("wizard")) openWizard();
     if (demo.get("page") === "strategies") runTest();
     else runQuickCheck();
     if (demo.get("scroll")) setTimeout(() => { $(".content").scrollTop = +demo.get("scroll"); }, 300);

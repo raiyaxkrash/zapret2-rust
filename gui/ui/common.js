@@ -43,6 +43,7 @@ const ICONS = {
   gamepad: '<path d="M7 8h10a4 4 0 0 1 4 4v1.5a3.5 3.5 0 0 1-6.2 2.2L14 15h-4l-.8.7A3.5 3.5 0 0 1 3 13.5V12a4 4 0 0 1 4-4z"/><path d="M8 11v3M6.5 12.5h3"/><circle cx="16" cy="11.5" r="1" fill="currentColor"/><circle cx="17.5" cy="13.5" r="1" fill="currentColor"/>',
   briefcase: '<rect x="3" y="7" width="18" height="13" rx="3"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  server: '<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6"/>',
   tick: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
   chip: '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>',
 };
@@ -203,6 +204,7 @@ function mockInvoke(cmd, args) {
     case "start_engine": return wait(900).then(() => { m.running = true; m.since = Math.floor(Date.now() / 1000); });
     case "stop_engine": return wait(200).then(() => { m.running = false; });
     case "get_strategies": return Promise.resolve(strategies);
+    case "get_isp": return wait(300).then(() => ({ isp: { asn: 12389, name: "PJSC Rostelecom" }, hint: { asn: [12389], name: "Ростелеком", strategy: "seqovl", youtube_strategy: "" } }));
     case "save_settings": m.settings = args.new; return Promise.resolve(m.settings);
     case "get_command_line": return Promise.resolve("engine\\bin\\winws2.exe --wf-tcp-out=80,443 ...");
     case "read_list": return Promise.resolve(m.lists[args.name] || "");
