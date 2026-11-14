@@ -11,6 +11,7 @@ mod tester;
 mod tgproxy;
 mod traffic;
 mod util;
+mod warp;
 mod watchdog;
 mod zapret_update;
 
@@ -45,7 +46,8 @@ pub struct AppState {
     pub cancel_test: AtomicBool,
     pub last_report: Mutex<Option<TestReport>>,
     pub busy: tokio::sync::Mutex<()>,
-    tray_toggle: Mutex<Option<MenuItem<Wry>>>,
+    /// Пункты меню трея: «Открыть», «Включить/выключить обход», «Выход».
+    tray_items: Mutex<Option<[MenuItem<Wry>; 3]>>,
     /// Когда мини-окно в трее скрылось из-за потери фокуса: щелчок по значку
     /// сначала снимает фокус, и без этой отметки окно тут же открылось бы снова.
     flyout_hidden_at: Mutex<Option<Instant>>,
@@ -53,6 +55,7 @@ pub struct AppState {
     app_update: Mutex<Option<AppUpdateInfo>>,
     /// Провайдер, определённый за этот запуск.
     isp: Mutex<Option<isp::Isp>>,
+    pub warp: Arc<warp::Warp>,
 }
 
 type CmdResult<T> = Result<T, String>;
@@ -209,14 +212,22 @@ async fn restart_if_running(app: &AppHandle) -> CmdResult<()> {
 fn update_tray(app: &AppHandle) {
     let state = app.state::<AppState>();
     let running = state.engine.is_running();
-    if let Some(item) = state.tray_toggle.lock().unwrap().as_ref() {
-        let _ = item.set_text(if running { "Выключить обход" } else { "Включить обход" });
+    let en = platform::is_english(&state.settings.lock().unwrap().lang);
+    let tr = |ru: &'static str, en_text: &'static str| if en { en_text } else { ru };
+    if let Some([open, toggle, quit]) = state.tray_items.lock().unwrap().as_ref() {
+        let _ = open.set_text(tr("Открыть Zapret2", "Open Zapret2"));
+        let _ = toggle.set_text(if running { tr("Выключить обход", "Turn bypass off") } else { tr("Включить обход", "Turn bypass on") });
+        let _ = quit.set_text(tr("Выход", "Quit"));
     }
     if let Some(tray) = app.tray_by_id("main") {
         let update = state.app_update.lock().unwrap().as_ref().map(|u| u.latest.clone());
-        let mut tip = String::from(if running { "Zapret2 — обход включён" } else { "Zapret2 — обход выключен" });
+        let mut tip = String::from(if running {
+            tr("Zapret2 — обход включён", "Zapret2: bypass is on")
+        } else {
+            tr("Zapret2 — обход выключен", "Zapret2: bypass is off")
+        });
         if let Some(v) = update {
-            tip.push_str(&format!("\nДоступно обновление {v}"));
+            tip.push_str(&format!("{}{v}", tr("\nДоступно обновление ", "\nUpdate available: ")));
         }
         let _ = tray.set_tooltip(Some(tip));
         if let Some(icon) = tray_icon(app, running) {
@@ -310,6 +321,58 @@ fn stop_all(app: &AppHandle) {
     let state = app.state::<AppState>();
     state.engine.stop(app);
     state.tg.stop(app);
+    state.warp.stop(app);
+}
+
+// ---------------------------------------------------------------- WARP
+
+/// Домены для WARP: включённые наборы и свои домены.
+fn warp_domains(state: &AppState, s: &Settings) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    if let Ok(p) = Presets::load(&state.paths) {
+        for pack in p.warp_packs.iter().filter(|w| s.warp_packs.contains(&w.id)) {
+            out.extend(pack.domains.iter().cloned());
+        }
+    }
+    out.extend(s.warp_custom.iter().filter_map(|d| util::normalize_domain(d).ok()));
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// Приводит WARP в соответствие с настройками.
+async fn warp_apply(app: &AppHandle, restart: bool) -> CmdResult<()> {
+    let state = app.state::<AppState>();
+    let s = state.settings.lock().unwrap().clone();
+    if !s.warp {
+        state.warp.stop(app);
+        state.warp.clear_error();
+        return Ok(());
+    }
+    let domains = warp_domains(&state, &s);
+    if state.warp.is_running() && !restart {
+        state.warp.set_domains(domains);
+        return Ok(());
+    }
+    let root = state.paths.root.clone();
+    state.warp.start(app, &root, s.warp_port, s.warp_junk, domains).await
+}
+
+#[tauri::command]
+fn get_warp_packs(state: State<'_, AppState>) -> CmdResult<Vec<presets::WarpPack>> {
+    Ok(Presets::load(&state.paths)?.warp_packs)
+}
+
+#[tauri::command]
+async fn warp_check(app: AppHandle) -> CmdResult<warp::Trace> {
+    let w = app.state::<AppState>().warp.clone();
+    w.trace().await
+}
+
+#[tauri::command]
+async fn warp_start(app: AppHandle) -> CmdResult<warp::WarpStatus> {
+    warp_apply(&app, true).await?;
+    Ok(app.state::<AppState>().warp.status())
 }
 
 /// Показывает или прячет окно и сообщает ему об этом: скрытое окно
@@ -408,6 +471,7 @@ struct AppInfo {
     platform: platform::Platform,
     app_update: Option<AppUpdateInfo>,
     tg_proxy: TgProxyStatus,
+    warp: warp::WarpStatus,
 }
 
 #[tauri::command]
@@ -428,6 +492,7 @@ fn get_state(app: AppHandle, state: State<'_, AppState>) -> AppInfo {
         app_update: state.app_update.lock().unwrap().clone(),
         platform: platform::info(),
         tg_proxy: tg_status(&state),
+        warp: state.warp.status(),
     }
 }
 
@@ -549,6 +614,9 @@ async fn save_settings(app: AppHandle, new: Settings) -> CmdResult<Settings> {
     if old.theme != new.theme {
         platform::apply_theme(&app, &new.theme);
     }
+    if old.lang != new.lang {
+        update_tray(&app);
+    }
 
     // Перезапускаем обход только если поменялось то, что влияет на winws2.
     let engine_changed = old.strategy != new.strategy
@@ -567,6 +635,10 @@ async fn save_settings(app: AppHandle, new: Settings) -> CmdResult<Settings> {
         restart_if_running(&app).await?;
     }
     let _ = app.emit("settings-changed", new.clone());
+    let warp_restart = old.warp_port != new.warp_port || old.warp_junk != new.warp_junk;
+    if old.warp != new.warp || (new.warp && (warp_restart || old.warp_packs != new.warp_packs || old.warp_custom != new.warp_custom)) {
+        warp_apply(&app, warp_restart).await?;
+    }
     let tg_changed = old.tg_proxy_port != new.tg_proxy_port || old.tg_proxy_secret != new.tg_proxy_secret;
     if old.tg_proxy != new.tg_proxy || (new.tg_proxy && tg_changed) {
         tg_apply(&app, tg_changed).await?;
@@ -939,7 +1011,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let sep = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open, &toggle, &sep, &quit])?;
-    *app.state::<AppState>().tray_toggle.lock().unwrap() = Some(toggle);
+    *app.state::<AppState>().tray_items.lock().unwrap() = Some([open.clone(), toggle.clone(), quit.clone()]);
 
     TrayIconBuilder::with_id("main")
         .icon(app.default_window_icon().cloned().expect("no icon"))
@@ -1009,10 +1081,11 @@ pub fn run() {
                 cancel_test: AtomicBool::new(false),
                 last_report: Mutex::new(None),
                 busy: tokio::sync::Mutex::new(()),
-                tray_toggle: Mutex::new(None),
+                tray_items: Mutex::new(None),
                 flyout_hidden_at: Mutex::new(None),
                 app_update: Mutex::new(None),
                 isp: Mutex::new(None),
+                warp: Arc::new(warp::Warp::default()),
             });
 
             platform::apply_theme(&handle, &settings.theme);
@@ -1038,6 +1111,17 @@ pub fn run() {
                         let _ = h.emit("toast", format!("Не удалось включить обход: {e}"));
                     }
                 });
+            }
+            if settings.warp {
+                let h = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = warp_apply(&h, false).await {
+                        let _ = h.emit("toast", format!("WARP: {e}"));
+                    }
+                });
+            } else {
+                // Наш PAC мог остаться после аварийного завершения.
+                warp::cleanup_stale();
             }
             if settings.tg_proxy {
                 let h = handle.clone();
@@ -1121,6 +1205,9 @@ pub fn run() {
             tg_proxy_open,
             get_isp,
             net_traffic,
+            get_warp_packs,
+            warp_check,
+            warp_start,
             download_engine,
             run_diagnostics,
             share_isp_result,
@@ -1132,6 +1219,7 @@ pub fn run() {
                 if let Some(state) = app.try_state::<AppState>() {
                     state.engine.stop(app);
                     state.tg.stop(app);
+                    state.warp.stop(app);
                 }
             }
         });

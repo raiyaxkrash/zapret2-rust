@@ -32,6 +32,15 @@ pub struct Settings {
     pub engine_on_launch: bool,
     pub close_to_tray: bool,
     pub debug_log: bool,
+    /// Встроенный WARP для сервисов, которые сами закрыли доступ из региона.
+    pub warp: bool,
+    pub warp_port: u16,
+    /// «Мусорные» пакеты перед рукопожатием, чтобы WARP хуже распознавался.
+    pub warp_junk: bool,
+    /// Включённые наборы сервисов WARP (id из presets.json, поле warp_packs).
+    pub warp_packs: Vec<String>,
+    /// Свои домены через WARP.
+    pub warp_custom: Vec<String>,
     /// Сторож: следить, не перестали ли открываться сервисы.
     pub watchdog: bool,
     /// Сторож сам переподбирает стратегию (иначе только предупреждает).
@@ -44,6 +53,8 @@ pub struct Settings {
 
     /// "system" | "light" | "dark"
     pub theme: String,
+    /// Язык интерфейса: "auto" | "ru" | "en".
+    pub lang: String,
     pub animations: bool,
 
     /// Локальный прокси для Telegram Desktop (tg-ws-proxy).
@@ -75,6 +86,11 @@ impl Default for Settings {
             engine_on_launch: true,
             close_to_tray: true,
             debug_log: false,
+            warp: false,
+            warp_port: crate::warp::DEFAULT_PORT,
+            warp_junk: true,
+            warp_packs: vec!["ai".into()],
+            warp_custom: Vec::new(),
             watchdog: true,
             watchdog_auto: true,
             engine_auto_update: true,
@@ -82,6 +98,7 @@ impl Default for Settings {
             app_auto_check: true,
             app_update_url: DEFAULT_APP_UPDATE_URL.into(),
             theme: "system".into(),
+            lang: "auto".into(),
             animations: true,
             tg_proxy: false,
             tg_proxy_port: crate::tgproxy::DEFAULT_PORT,

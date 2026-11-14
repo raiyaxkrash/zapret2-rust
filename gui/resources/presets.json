@@ -1,6 +1,7 @@
 {
-  "version": 5,
+  "version": 6,
   "isp": [],
+  "warp_packs": [{"id": "ai", "name": "Нейросети", "icon": "wand", "description": "ChatGPT, Claude, Gemini, Copilot, Perplexity, Grok, Midjourney и другие", "domains": ["chatgpt.com", "openai.com", "oaistatic.com", "oaiusercontent.com", "sora.com", "claude.ai", "claude.com", "anthropic.com", "gemini.google.com", "aistudio.google.com", "notebooklm.google.com", "generativelanguage.googleapis.com", "copilot.microsoft.com", "perplexity.ai", "grok.com", "x.ai", "midjourney.com", "character.ai", "elevenlabs.io", "suno.com", "poe.com", "cursor.com", "cursor.sh"]}, {"id": "music", "name": "Музыка", "icon": "play", "description": "Spotify и TIDAL", "domains": ["spotify.com", "scdn.co", "spotifycdn.com", "spotify.design", "tidal.com"]}, {"id": "dev", "name": "Программы и разработка", "icon": "code", "description": "Загрузки и аккаунты Intel, AMD, Autodesk, Adobe, JetBrains, Docker, HashiCorp, Notion", "domains": ["intel.com", "amd.com", "autodesk.com", "adobe.com", "jetbrains.com", "docker.com", "docker.io", "hashicorp.com", "terraform.io", "notion.so", "notion.com"]}],
   "packs": [
     { "id": "telegram", "name": "Telegram", "icon": "send", "description": "Сайт, веб-версия, ссылки t.me. Само приложение использует свой протокол: если оно не подключается, включите в нём прокси" },
     { "id": "meta", "name": "Instagram и Facebook", "icon": "camera", "description": "Instagram, Facebook, WhatsApp, Threads" },

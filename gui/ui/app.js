@@ -12,6 +12,7 @@ async function refresh() {
     state = await invoke("get_state");
     testing = state.testing;
     applyAppearance(state.settings.theme, state.platform, state.settings.animations);
+    I18N.sync(state.settings.lang, state.platform?.lang);
     render();
   } catch (e) {
     console.error(e);
@@ -47,6 +48,7 @@ function goto(page) {
   $$(".page").forEach((p) => p.classList.toggle("active", p.id === `page-${page}`));
   $(".content").scrollTop = 0;
   if (page === "strategies") { loadCommandLine(); loadIsp(); }
+  if (page === "warp") loadWarpPacks();
   if (page === "lists") loadList(currentList);
   if (page === "logs") scrollLog();
 }
@@ -127,6 +129,7 @@ function render() {
   $$(".services .setting").forEach((el) => el.classList.toggle("checked", !!s[el.dataset.key]));
   $$("#customMode button").forEach((b) => b.classList.toggle("active", b.dataset.mode === s.custom_mode));
   $$("#themeSel button").forEach((b) => b.classList.toggle("active", b.dataset.theme === (s.theme || "system")));
+  $$("#langSel button").forEach((b) => b.classList.toggle("active", b.dataset.lang === (s.lang || "auto")));
   $("#customModeCard").hidden = !s.custom;
   const ud = state.user_domains, ad = state.auto_domains;
   $("#customDesc").textContent =
@@ -145,6 +148,7 @@ function render() {
 
   renderUpdatePill(state.app_update);
   renderTgProxy();
+  renderWarp();
   renderPacks();
   $("#testBtn").disabled = testing;
   $("#cancelTestBtn").hidden = !testing;
@@ -152,14 +156,14 @@ function render() {
 }
 
 async function enableTestsigning() {
-  const ok = confirm(
+  const ok = confirm(I18N.t(
     "Включить режим тестовой подписи драйверов?\n\n" +
     "Это нужно, чтобы Windows на ARM64 загрузила неподписанный драйвер WinDivert.\n" +
     "• в углу рабочего стола появится надпись «Тестовый режим»;\n" +
     "• Windows разрешит загрузку неподписанных драйверов;\n" +
     "• выключить потом можно командой bcdedit /set {current} testsigning off.\n\n" +
     "После включения нужна перезагрузка."
-  );
+  ));
   if (!ok) return;
   try { toast(await invoke("enable_testsigning"), "info", 12000); }
   catch (e) { toast(errText(e), "err", 9000); }
@@ -230,6 +234,7 @@ $$("input[data-setting]").forEach((inp) =>
 );
 $$("#customMode button").forEach((b) => b.addEventListener("click", () => saveSettings({ custom_mode: b.dataset.mode })));
 $$("#themeSel button").forEach((b) => b.addEventListener("click", () => saveSettings({ theme: b.dataset.theme })));
+$$("#langSel button").forEach((b) => b.addEventListener("click", () => saveSettings({ lang: b.dataset.lang })));
 $("#ytStrategy").addEventListener("change", (e) => saveSettings({ youtube_strategy: e.target.value }).then(loadCommandLine));
 
 async function killConflicts() {
@@ -267,7 +272,7 @@ async function runQuickCheck() {
       const meta = cls === "bad" ? "не открывается" : `${ok.length}/${list.length} · ${ms} мс`;
       return statusItem(SERVICE_NAMES[svc] || packs.find((p) => p.id === svc)?.name || svc, cls, meta);
     }).join("");
-    $("#checkTime").textContent = `Проверено в ${new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}${state.status.running ? "" : " · обход выключен"}`;
+    $("#checkTime").textContent = `Проверено в ${new Date().toLocaleTimeString(I18N.locale, { hour: "2-digit", minute: "2-digit" })}${state.status.running ? "" : " · обход выключен"}`;
   } catch (e) {
     $("#statusItems").innerHTML = "";
     toast(errText(e), "err");
@@ -295,7 +300,7 @@ function renderPacks() {
       <div class="pack-top"><span class="pack-ico">${icon(p.icon || "globe")}</span><span class="pack-check">${icon("tick")}</span></div>
       <div class="pack-name">${esc(p.name)}</div>
       <div class="pack-desc">${esc(p.description)}</div>
-      <div class="pack-count">${p.kind === "ipset" ? `${p.domains.toLocaleString("ru-RU")} ${plural(p.domains, "подсеть", "подсети", "подсетей")}` : `${p.domains} ${plural(p.domains, "домен", "домена", "доменов")}`}</div>
+      <div class="pack-count">${p.kind === "ipset" ? `${p.domains.toLocaleString(I18N.locale)} ${plural(p.domains, "подсеть", "подсети", "подсетей")}` : `${p.domains} ${plural(p.domains, "домен", "домена", "доменов")}`}</div>
     </button>`).join("");
   $$(".pack", box).forEach((b) => b.addEventListener("click", () => {
     const set = new Set(state.settings.packs || []);
@@ -640,6 +645,7 @@ const WIZ_CHOICES = [
   { id: "discord", name: "Discord", icon: "chat", desc: "Сайт, приложение и голосовые каналы" },
   { id: "telegram", name: "Telegram", icon: "send", desc: "Приложение Telegram Desktop" },
   { id: "meta", name: "Instagram и Facebook", icon: "camera", desc: "Instagram, Facebook, WhatsApp" },
+  { id: "ai", name: "Нейросети", icon: "wand", desc: "ChatGPT, Claude, Gemini — через WARP" },
   { id: "hosting", name: "Другие сайты и игры", icon: "server", desc: "Грузятся бесконечно или обрываются" },
 ];
 let wizPicked = new Set(["youtube", "discord"]);
@@ -650,7 +656,7 @@ function wizStep(n) { $$(".wizard-step").forEach((el) => { el.hidden = el.datase
 function openWizard() {
   const s = state.settings;
   wizPicked = new Set(WIZ_CHOICES.map((c) => c.id).filter((id) =>
-    id === "telegram" ? s.tg_proxy : ["youtube", "discord"].includes(id) ? s[id] : (s.packs || []).includes(id)));
+    id === "telegram" ? s.tg_proxy : id === "ai" ? (s.warp && (s.warp_packs || []).includes("ai")) : ["youtube", "discord"].includes(id) ? s[id] : (s.packs || []).includes(id)));
   if (!wizPicked.size) wizPicked = new Set(["youtube", "discord"]);
   $("#wizChoices").innerHTML = WIZ_CHOICES.map((c) => `
     <button class="pack ${wizPicked.has(c.id) ? "on" : ""}" data-id="${c.id}">
@@ -686,13 +692,18 @@ async function runWizard() {
   const work = (title, sub, pct) => { $("#wizWorkTitle").textContent = title; $("#wizWorkSub").textContent = sub; if (pct != null) $("#wizBar").style.width = `${pct}%`; };
   work("Применяем настройки…", "", 5);
   const yt = wizPicked.has("youtube"), dc = wizPicked.has("discord");
-  const packIds = WIZ_CHOICES.map((c) => c.id).filter((id) => !["youtube", "discord", "telegram"].includes(id));
+  const packIds = WIZ_CHOICES.map((c) => c.id).filter((id) => !["youtube", "discord", "telegram", "ai"].includes(id));
   const keepPacks = (state.settings.packs || []).filter((id) => !packIds.includes(id));
   const patch = {
     youtube: yt, discord: dc, discord_voice: dc,
     packs: [...keepPacks, ...packIds.filter((id) => wizPicked.has(id))],
     tg_proxy: wizPicked.has("telegram"),
   };
+  // Нейросети закрыли доступ сами: для них включается WARP с набором «Нейросети».
+  if (wizPicked.has("ai")) {
+    patch.warp = true;
+    patch.warp_packs = [...new Set([...(state.settings.warp_packs || []), "ai"])];
+  }
   // Только Telegram: обход не нужен, хватит прокси.
   const needEngine = yt || dc || patch.packs.length > 0 || state.settings.custom;
   let shared = false;
@@ -751,6 +762,86 @@ $("#wizDone").addEventListener("click", closeWizard);
 $("#wizTg").addEventListener("click", () => $("#tgOpen").click());
 $("#wizShare").addEventListener("click", async () => { try { await invoke("share_isp_result"); } catch (e) { toast(errText(e), "err"); } });
 $("#openWizard").addEventListener("click", openWizard);
+
+/* ===================================================================== WARP */
+let warpPacks = [];
+async function loadWarpPacks() {
+  try { warpPacks = await invoke("get_warp_packs"); } catch { warpPacks = []; }
+  renderWarp();
+}
+function fmtBytes(n) {
+  return n >= 1073741824 ? `${(n / 1073741824).toFixed(1)} ГБ` : n >= 1048576 ? `${(n / 1048576).toFixed(1)} МБ` : `${Math.round(n / 1024)} КБ`;
+}
+function renderWarp() {
+  if (!state || !state.warp) return;
+  const w = state.warp, s = state.settings, on = !!s.warp;
+  const failed = on && !w.running && w.last_error;
+  const connecting = on && !w.running && !w.last_error;
+  $("#warpCard .setting").classList.toggle("checked", on);
+  $("#warpActions").hidden = !on;
+  $("#warpCheck").hidden = !w.running;
+  $("#warpRetry").hidden = !failed;
+  $("#warpHint").textContent = failed ? w.last_error
+    : w.running ? `Получено ${fmtBytes(w.rx)}, отправлено ${fmtBytes(w.tx)}` : "Подключение…";
+  $("#warpHint").classList.toggle("err", !!failed);
+  $("#warpDesc").textContent = !on ? "Выключен"
+    : failed ? "Не подключён" : connecting ? "Подключение…"
+    : w.connected ? `Подключён через ${w.endpoint} · ${w.domains} ${plural(w.domains, "сайт", "сайта", "сайтов")}` : "Переподключение…";
+  $("#warpHomeDesc").textContent = !on ? "Нейросети и другие сервисы"
+    : failed ? "Ошибка, подробнее в разделе WARP" : w.connected ? "Подключён" : "Подключение…";
+
+  const enabled = new Set(s.warp_packs || []);
+  const box = $("#warpPacks");
+  const html = warpPacks.map((p) => `
+    <button class="pack ${enabled.has(p.id) ? "on" : ""}" data-id="${esc(p.id)}" title="${esc(p.description)}">
+      <div class="pack-top"><span class="pack-ico">${icon(p.icon || "globe")}</span><span class="pack-check">${icon("tick")}</span></div>
+      <div class="pack-name">${esc(p.name)}</div>
+      <div class="pack-desc">${esc(p.description)}</div>
+      <div class="pack-count">${p.domains.length} ${plural(p.domains.length, "сайт", "сайта", "сайтов")}</div>
+    </button>`).join("");
+  if (box.dataset.html !== html) {
+    box.innerHTML = html;
+    box.dataset.html = html;
+    $$(".pack", box).forEach((b) => b.addEventListener("click", () => {
+      const set = new Set(state.settings.warp_packs || []);
+      set.has(b.dataset.id) ? set.delete(b.dataset.id) : set.add(b.dataset.id);
+      state.settings.warp_packs = [...set];
+      saveSettings({ warp_packs: state.settings.warp_packs }, { quiet: true });
+    }));
+  }
+  const ta = $("#warpCustom");
+  if (document.activeElement !== ta && !ta.dataset.dirty) ta.value = (s.warp_custom || []).join("\n");
+  $("#warpCustomCount").textContent = `${(s.warp_custom || []).length} ${plural((s.warp_custom || []).length, "сайт", "сайта", "сайтов")}`;
+  if (document.activeElement !== $("#warpPort")) $("#warpPort").value = s.warp_port || 40080;
+}
+$("#warpCustom").addEventListener("input", (e) => { e.target.dataset.dirty = "1"; });
+$("#warpCustomSave").addEventListener("click", async () => {
+  const list = $("#warpCustom").value.split(/\s+/).map((x) => x.trim()).filter(Boolean);
+  delete $("#warpCustom").dataset.dirty;
+  await saveSettings({ warp_custom: list }, { quiet: true });
+  toast("Сайты для WARP сохранены");
+});
+$("#saveWarpPort").addEventListener("click", () => {
+  const port = parseInt($("#warpPort").value, 10);
+  if (!(port >= 1024 && port <= 65535)) { toast("Порт должен быть числом от 1024 до 65535", "err"); return; }
+  saveSettings({ warp_port: port }, { quiet: true });
+});
+$("#warpCheck").addEventListener("click", async () => {
+  const btn = $("#warpCheck");
+  btn.disabled = true;
+  try {
+    const t = await invoke("warp_check");
+    $("#warpHint").textContent = t.warp ? `Работает: ваш адрес через WARP ${t.ip}, страна ${t.loc}` : `Ответ получен, но WARP не активен (${t.ip})`;
+  } catch (e) { toast(errText(e), "err"); }
+  btn.disabled = false;
+});
+$("#warpRetry").addEventListener("click", async () => {
+  $("#warpRetry").disabled = true;
+  try { await invoke("warp_start"); } catch (e) { toast(errText(e), "err", 9000); }
+  $("#warpRetry").disabled = false;
+  refresh();
+});
+listen("warp-state", () => { if (!busy) refresh(); });
 
 /* ===================================================================== диагностика */
 let diagReport = [];
@@ -849,7 +940,7 @@ function updateListCount() {
 }
 
 async function loadList(name) {
-  if (listDirty && name !== currentList && !confirm("Есть несохранённые изменения. Отбросить их?")) return;
+  if (listDirty && name !== currentList && !confirm(I18N.t("Есть несохранённые изменения. Отбросить их?"))) return;
   currentList = name;
   listDirty = false;
   $$("#listTabs .tab").forEach((t) => t.classList.toggle("active", t.dataset.list === name));
@@ -878,7 +969,7 @@ $("#listSave").addEventListener("click", async () => {
   finally { btn.disabled = false; }
 });
 $("#listClear").addEventListener("click", async () => {
-  if (!confirm("Очистить автоматически найденные сайты?")) return;
+  if (!confirm(I18N.t("Очистить автоматически найденные сайты?"))) return;
   $("#listEditor").value = "";
   listDirty = true;
   $("#listSave").click();
@@ -893,7 +984,7 @@ function logLine(text, withTime = true) {
   const low = text.toLowerCase();
   if (text.startsWith("[app]")) div.className = "l-app";
   else if (low.includes("error") || low.includes("ошибк") || low.includes("fail")) div.className = "l-err";
-  const t = withTime ? `<span class="t">${new Date().toLocaleTimeString("ru-RU")}</span> ` : "";
+  const t = withTime ? `<span class="t">${new Date().toLocaleTimeString(I18N.locale)}</span> ` : "";
   div.innerHTML = t + esc(text);
   log.appendChild(div);
   while (log.childElementCount > MAX_LOG_LINES) log.firstElementChild.remove();
@@ -936,7 +1027,7 @@ $("#engCheck").addEventListener("click", async () => {
   try {
     const info = await invoke("check_engine_update");
     if (info.available) {
-      setStatus(st, `Доступна версия ${info.latest} от ${new Date(info.published_at).toLocaleDateString("ru-RU")}`, "good");
+      setStatus(st, `Доступна версия ${info.latest} от ${new Date(info.published_at).toLocaleDateString(I18N.locale)}`, "good");
       $("#engInstall").hidden = false;
     } else {
       setStatus(st, `Установлена последняя версия (${info.latest})`);
@@ -999,6 +1090,7 @@ listen("settings-changed", ({ payload }) => {
   const strategyChanged = state.settings.strategy !== payload.strategy;
   state.settings = payload;
   applyAppearance(payload.theme, null, payload.animations);
+  I18N.sync(payload.lang, state.platform?.lang);
   render();
   if (strategyChanged) loadCommandLine();
 });

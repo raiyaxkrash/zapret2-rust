@@ -9,6 +9,7 @@ async function refresh() {
   try {
     st = await invoke("get_state");
     applyAppearance(st.settings.theme, st.platform, st.settings.animations);
+    I18N.sync(st.settings.lang, st.platform?.lang);
     if (!strategies.length) strategies = await invoke("get_strategies");
     render();
   } catch (e) { console.error(e); }
@@ -91,7 +92,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") invoke("hi
 
 listen("flyout-shown", refresh);
 listen("engine-state", () => { if (!busy) refresh(); });
-listen("settings-changed", ({ payload }) => { if (st) { st.settings = payload; applyAppearance(payload.theme, null, payload.animations); render(); } });
+listen("settings-changed", ({ payload }) => { if (st) { st.settings = payload; applyAppearance(payload.theme, null, payload.animations); I18N.sync(payload.lang, st.platform?.lang); render(); } });
 listen("content-updated", async () => { strategies = await invoke("get_strategies"); render(); });
 everyWhileVisible(1000, render);
 

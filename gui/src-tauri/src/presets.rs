@@ -55,6 +55,21 @@ pub struct Presets {
     /// Рекомендуемые стратегии для провайдеров (по номеру AS).
     #[serde(default)]
     pub isp: Vec<crate::isp::IspHint>,
+    /// Наборы сервисов для WARP.
+    #[serde(default)]
+    pub warp_packs: Vec<WarpPack>,
+}
+
+/// Набор сервисов, которые идут через WARP (сами закрыли доступ из региона).
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct WarpPack {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub icon: String,
+    pub domains: Vec<String>,
 }
 
 /// id набора — только латиница, цифры, «-» и «_» (используется как имя файла).
@@ -336,6 +351,7 @@ mod tests {
                 check: vec![],
             }],
             isp: vec![],
+            warp_packs: vec![],
         };
         (paths, presets)
     }

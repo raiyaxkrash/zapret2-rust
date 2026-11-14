@@ -25,6 +25,7 @@
         <button class="nav-item" data-page="strategies"><span data-icon="sliders"></span>Стратегии</button>
         <button class="nav-item" data-page="lists"><span data-icon="list"></span>Списки сайтов</button>
         <button class="nav-item" data-page="telegram"><span data-icon="send"></span>Telegram</button>
+        <button class="nav-item" data-page="warp"><span data-icon="globe"></span>WARP</button>
         <button class="nav-item" data-page="diag"><span data-icon="search"></span>Диагностика</button>
         <button class="nav-item" data-page="logs"><span data-icon="terminal"></span>Журнал</button>
         <div class="nav-spacer"></div>
@@ -81,6 +82,10 @@
                 <div class="setting-text"><div class="setting-title">Мои сайты</div><div class="setting-desc" id="customDesc">Сайты из вашего списка</div></div>
                 <span class="switch"><input type="checkbox" data-setting="custom" /><i></i></span>
               </label>
+              <label class="setting" data-key="warp">
+                <div class="setting-text"><div class="setting-title">WARP</div><div class="setting-desc" id="warpHomeDesc">Нейросети и другие сервисы</div></div>
+                <span class="switch"><input type="checkbox" data-setting="warp" /><i></i></span>
+              </label>
               <label class="setting" data-key="tg_proxy">
                 <div class="setting-text"><div class="setting-title">Прокси для Telegram</div><div class="setting-desc" id="tgHomeDesc">Для приложения Telegram</div></div>
                 <span class="switch"><input type="checkbox" data-setting="tg_proxy" /><i></i></span>
@@ -106,6 +111,46 @@
             <input type="text" placeholder="Не открывается сайт? Вставьте ссылку или домен и нажмите Enter" spellcheck="false" />
             <button class="btn small" type="submit">Добавить</button>
           </form>
+        </section>
+
+        <!-- ============================== WARP -->
+        <section class="page" id="page-warp">
+          <div class="page-head">
+            <div>
+              <h1>WARP</h1>
+              <p class="lead">Бесплатный туннель Cloudflare для сервисов, которые сами закрыли доступ из вашего региона: нейросети, музыка, загрузки программ. Через WARP идут только выбранные сервисы, остальное — напрямую.</p>
+            </div>
+          </div>
+
+          <div class="tg-card" id="warpCard">
+            <label class="setting">
+              <div class="setting-text"><div class="setting-title">Включить WARP</div><div class="setting-desc" id="warpDesc">Выключен</div></div>
+              <span class="switch"><input type="checkbox" data-setting="warp" /><i></i></span>
+            </label>
+            <div class="tg-actions" id="warpActions" hidden>
+              <span class="tg-hint" id="warpHint"></span>
+              <button class="btn small" id="warpCheck"><span data-icon="search"></span>Проверить</button>
+              <button class="btn small primary" id="warpRetry" hidden><span data-icon="refresh"></span>Подключить снова</button>
+            </div>
+          </div>
+
+          <h2 class="section-title">Что пускать через WARP</h2>
+          <div class="packs" id="warpPacks"></div>
+
+          <h2 class="section-title">Свои сайты</h2>
+          <div class="card editor-card">
+            <div class="editor-hint">По одному домену в строке, поддомены учитываются автоматически.</div>
+            <textarea id="warpCustom" spellcheck="false" style="min-height:110px" placeholder="example.com"></textarea>
+            <div class="editor-foot"><span class="muted" id="warpCustomCount"></span><div class="editor-actions"><button class="btn primary" id="warpCustomSave">Сохранить</button></div></div>
+          </div>
+
+          <h2 class="section-title">Параметры</h2>
+          <div class="settings-group">
+            <label class="setting"><span data-icon="flash"></span><div class="setting-text"><div class="setting-title">Маскировка</div><div class="setting-desc">Перед подключением отправлять случайные пакеты, чтобы провайдер не узнал WARP. Выключайте, только если без неё работает лучше</div></div><div class="setting-control"><span class="switch"><input type="checkbox" data-setting="warp_junk" /><i></i></span></div></label>
+            <div class="setting"><span data-icon="globe"></span><div class="setting-text"><div class="setting-title">Порт локального прокси</div><div class="setting-desc">По умолчанию 40080. Браузеры получают его автоматически через системные настройки прокси</div></div>
+              <div class="field-row" style="max-width:220px"><input id="warpPort" type="number" min="1024" max="65535" /><button class="btn" id="saveWarpPort">Сохранить</button></div>
+            </div>
+          </div>
         </section>
 
         <!-- ============================== DIAGNOSTICS -->
@@ -291,6 +336,15 @@
                 <button data-theme="dark">Тёмная</button>
               </div>
             </div>
+            <div class="setting">
+              <span data-icon="globe"></span>
+              <div class="setting-text"><div class="setting-title">Язык</div><div class="setting-desc">Язык интерфейса. Журнал всегда на русском</div></div>
+              <div class="segmented" id="langSel">
+                <button data-lang="auto">Как в системе</button>
+                <button data-lang="ru" data-no-i18n>Русский</button>
+                <button data-lang="en">English</button>
+              </div>
+            </div>
             <label class="setting"><span data-icon="flash"></span><div class="setting-text"><div class="setting-title">Анимации</div><div class="setting-desc">Выключите на слабом компьютере или ноутбуке, чтобы интерфейс меньше нагружал видеокарту</div></div><div class="setting-control"><span class="switch"><input type="checkbox" data-setting="animations" /><i></i></span></div></label>
           </div>
 
@@ -387,6 +441,7 @@
   </div>
 
   <div class="toasts" id="toasts"></div>
+  <script src="i18n.js"></script>
   <script src="common.js"></script>
   <script src="app.js"></script>
 </body>

@@ -75,10 +75,7 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const errText = (e) => (typeof e === "string" ? e : e?.message || JSON.stringify(e));
 
-function plural(n, one, few, many) {
-  const a = n % 10, b = n % 100;
-  return a === 1 && b !== 11 ? one : a >= 2 && a <= 4 && (b < 10 || b >= 20) ? few : many;
-}
+const plural = (n, one, few, many) => I18N.plural(n, one, few, many);
 function fmtUptime(sec) {
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
   return h ? `${h} ч ${m} мин` : m ? `${m} мин ${s} с` : `${s} с`;
@@ -182,7 +179,7 @@ function mockInvoke(cmd, args) {
   const demo = !!new URLSearchParams(location.search).get("demo");
   const m = (window.__mock ||= {
     running: demo, since: demo ? Math.floor(Date.now() / 1000) - 5025 : null,
-    settings: { packs: demo ? ["telegram", "meta"] : [], strategy: demo ? "seqovl" : "fake_multisplit_md5", youtube_strategy: demo ? "fake_multisplit_md5" : "", youtube: true, discord: true, discord_voice: true, custom: false, custom_mode: "list", quic: true, autostart: false, start_minimized: true, engine_on_launch: true, close_to_tray: true, debug_log: false, engine_auto_update: true, content_auto_update: true, app_auto_check: true, app_update_url: "https://github.com/raiyaxkrash/zapret2-rust/releases/latest/download/latest.json", theme: new URLSearchParams(location.search).get("theme") || "system", custom_tls: "--payload=tls_client_hello --lua-desync=multisplit:pos=1", custom_http: "", custom_quic: "", tg_proxy: demo, tg_proxy_port: 1443, tg_proxy_secret: "0123456789abcdef0123456789abcdef" },
+    settings: { packs: demo ? ["telegram", "meta"] : [], strategy: demo ? "seqovl" : "fake_multisplit_md5", youtube_strategy: demo ? "fake_multisplit_md5" : "", youtube: true, discord: true, discord_voice: true, custom: false, custom_mode: "list", quic: true, autostart: false, start_minimized: true, engine_on_launch: true, close_to_tray: true, debug_log: false, engine_auto_update: true, content_auto_update: true, app_auto_check: true, app_update_url: "https://github.com/raiyaxkrash/zapret2-rust/releases/latest/download/latest.json", theme: new URLSearchParams(location.search).get("theme") || "system", lang: "auto", custom_tls: "--payload=tls_client_hello --lua-desync=multisplit:pos=1", custom_http: "", custom_quic: "", tg_proxy: demo, tg_proxy_port: 1443, warp: demo, warp_port: 40080, warp_junk: true, warp_packs: ["ai"], warp_custom: [], watchdog: true, watchdog_auto: true, tg_proxy_secret: "0123456789abcdef0123456789abcdef" },
     lists: { user: "# Мои сайты\nrutracker.org\n", exclude: "gosuslugi.ru\n", auto: "", youtube: "youtube.com\ngooglevideo.com\n", discord: "discord.com\n" },
   });
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -198,12 +195,19 @@ function mockInvoke(cmd, args) {
       data_dir: "C:\\Users\\user\\AppData\\Local\\Zapret2GUI", user_domains: 1, auto_domains: 0, autostart: m.settings.autostart,
       content_version: 2,
       app_update: new URLSearchParams(location.search).get("upd") ? { configured: true, available: true, current: "1.1.0", latest: "1.2.0", notes: "Меньше нагрузка на видеокарту" } : null,
+      warp: { running: !!m.settings.warp, connected: !!m.settings.warp, since: null, last_error: null, endpoint: "162.159.192.1:2408", port: 40080, rx: 48234496, tx: 3145728, domains: 23 },
       tg_proxy: { available: true, running: !!m.settings.tg_proxy, since: null, last_error: null, port: m.settings.tg_proxy_port, link: `tg://proxy?server=127.0.0.1&port=${m.settings.tg_proxy_port}&secret=dd${m.settings.tg_proxy_secret}` },
-      platform: { arm64: !!new URLSearchParams(location.search).get("arm"), testsigning: false, secure_boot: false, build: 26100, mica: false, accent: { dark_theme: "#4cc2ff", light_theme: "#005fb8" } },
+      platform: { arm64: !!new URLSearchParams(location.search).get("arm"), lang: "ru", testsigning: false, secure_boot: false, build: 26100, mica: false, accent: { dark_theme: "#4cc2ff", light_theme: "#005fb8" } },
     });
     case "start_engine": return wait(900).then(() => { m.running = true; m.since = Math.floor(Date.now() / 1000); });
     case "stop_engine": return wait(200).then(() => { m.running = false; });
     case "get_strategies": return Promise.resolve(strategies);
+    case "get_warp_packs": return Promise.resolve([
+      { id: "ai", name: "Нейросети", icon: "wand", description: "ChatGPT, Claude, Gemini, Copilot, Perplexity, Grok, Midjourney и другие", domains: new Array(23).fill("x") },
+      { id: "music", name: "Музыка", icon: "play", description: "Spotify и TIDAL", domains: new Array(5).fill("x") },
+      { id: "dev", name: "Программы и разработка", icon: "code", description: "Загрузки и аккаунты Intel, AMD, Autodesk, Adobe, JetBrains, Docker, HashiCorp, Notion", domains: new Array(11).fill("x") },
+    ]);
+    case "warp_check": return wait(800).then(() => ({ ip: "104.28.207.39", loc: "AT", colo: "VIE", warp: true }));
     case "run_diagnostics": return wait(1500).then(() => [
       { title: "Интернет", status: "good", detail: "Подключение есть (84 мс)", advice: "" },
       { title: "DNS", status: "good", detail: "Подмены адресов не найдено", advice: "" },

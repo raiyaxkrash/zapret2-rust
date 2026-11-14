@@ -1,6 +1,6 @@
 [package]
 name = "zapret2-gui"
-version = "2.1.1"
+version = "2.2.0"
 description = "Zapret2 GUI — графическая оболочка для zapret2 (winws2) под Windows"
 edition = "2021"
 publish = false
@@ -28,10 +28,13 @@ aes = "0.8"
 ctr = "0.9"
 getrandom = "0.2"
 base64 = "0.22"
+# Встроенный WARP: WireGuard (Noise) и сетевой стек в пространстве пользователя
+boringtun = { version = "0.7", default-features = false }
+smoltcp = { version = "0.12", default-features = false, features = ["std", "medium-ip", "proto-ipv4", "socket-tcp", "socket-udp"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 sha2 = "0.10"
 hex = "0.4"
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_Networking_WinInet", "Win32_Globalization"] }
 
 [profile.release]
 codegen-units = 1

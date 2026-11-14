@@ -26,6 +26,8 @@ pub struct Platform {
     /// Включён режим тестовой подписи драйверов (нужен для ARM64-драйвера WinDivert).
     pub testsigning: bool,
     pub secure_boot: bool,
+    /// Язык Windows для режима «Как в системе»: "ru" или "en".
+    pub lang: &'static str,
 }
 
 pub fn is_arm64() -> bool {
@@ -113,6 +115,26 @@ pub fn info() -> Platform {
         // bcdedit и реестр опрашиваем только на ARM64: на остальных это не нужно.
         testsigning: arm64 && testsigning_enabled(),
         secure_boot: arm64 && secure_boot_enabled(),
+        lang: system_lang(),
+    }
+}
+
+/// Русский интерфейс для русского, украинского, белорусского и казахского языка Windows, иначе английский.
+pub fn system_lang() -> &'static str {
+    // SAFETY: функция без аргументов, только читает настройку пользователя.
+    let id = unsafe { windows_sys::Win32::Globalization::GetUserDefaultUILanguage() };
+    match id & 0x3ff {
+        0x19 | 0x22 | 0x23 | 0x3f => "ru",
+        _ => "en",
+    }
+}
+
+/// Английский интерфейс для этого значения настройки языка.
+pub fn is_english(lang: &str) -> bool {
+    match lang {
+        "en" => true,
+        "ru" => false,
+        _ => system_lang() == "en",
     }
 }
 
