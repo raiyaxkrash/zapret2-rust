@@ -1,7 +1,7 @@
 {
   "name": "zapret2-gui",
   "private": true,
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Графическая оболочка для zapret2 под Windows",
   "scripts": {
     "tauri": "tauri",

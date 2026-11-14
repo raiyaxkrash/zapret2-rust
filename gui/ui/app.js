@@ -786,7 +786,7 @@ function renderWarp() {
   $("#warpHint").classList.toggle("err", !!failed);
   $("#warpDesc").textContent = !on ? "Выключен"
     : failed ? "Не подключён" : connecting ? "Подключение…"
-    : w.connected ? `Подключён через ${w.endpoint} · ${w.domains} ${plural(w.domains, "сайт", "сайта", "сайтов")}` : "Переподключение…";
+    : w.connected ? `Подключён через ${w.endpoint} · ${w.domains} ${plural(w.domains, "сайт", "сайта", "сайтов")}${w.apps ? " · браузеры и программы" : ""}` : "Переподключение…";
   $("#warpHomeDesc").textContent = !on ? "Нейросети и другие сервисы"
     : failed ? "Ошибка, подробнее в разделе WARP" : w.connected ? "Подключён" : "Подключение…";
 

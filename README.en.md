@@ -49,7 +49,7 @@ Install it, tick what doesn't open, and the app takes care of the rest.
 
 - **Services:** YouTube (incl. QUIC), Discord with voice, Telegram Desktop, plus one-click packs — Telegram, Instagram & Facebook, X, torrent trackers, Roblox, Signal, LinkedIn, games & launchers (Steam, Epic, Riot, Ubisoft, EA, GOG, FACEIT), Twitch.
 - **Foreign hosting & CDN:** ~16,000 subnets of Cloudflare, Hetzner, DigitalOcean, OVH, AWS, Google Cloud, Oracle and others for sites and games that hang or break mid-download.
-- **Built-in WARP** for services that block Russia themselves: ChatGPT, Claude, Gemini and other AI tools, Spotify, Intel/AMD/Adobe/JetBrains downloads. Only the selected sites go through the free Cloudflare tunnel; everything else stays direct. Nothing extra to install.
+- **Built-in WARP** for services that block Russia themselves: ChatGPT, Claude, Gemini and other AI tools, Spotify, Intel/AMD/Adobe/JetBrains downloads. Only the selected sites go through the free Cloudflare tunnel; everything else stays direct. Works in browsers and in desktop apps (Spotify, ChatGPT, Claude). Nothing extra to install.
 - **Automatic strategy search** against real sites, with a separate strategy for YouTube.
 - **Watchdog:** checks services every 15 minutes and re-picks a strategy when the ISP changes its blocking.
 - **Diagnostics:** tells DNS spoofing, IP blocking, DPI resets and service-side geo-restrictions apart, with advice for each.

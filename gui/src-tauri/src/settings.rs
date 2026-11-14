@@ -37,6 +37,8 @@ pub struct Settings {
     pub warp_port: u16,
     /// «Мусорные» пакеты перед рукопожатием, чтобы WARP хуже распознавался.
     pub warp_junk: bool,
+    /// Перехват для программ, которые не используют системный прокси.
+    pub warp_apps: bool,
     /// Включённые наборы сервисов WARP (id из presets.json, поле warp_packs).
     pub warp_packs: Vec<String>,
     /// Свои домены через WARP.
@@ -89,6 +91,7 @@ impl Default for Settings {
             warp: false,
             warp_port: crate::warp::DEFAULT_PORT,
             warp_junk: true,
+            warp_apps: true,
             warp_packs: vec!["ai".into()],
             warp_custom: Vec::new(),
             watchdog: true,

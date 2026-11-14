@@ -7,7 +7,7 @@ use std::{
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     sync::{
         atomic::{AtomicU64, Ordering},
-        Arc,
+        Arc, RwLock,
     },
     time::{Duration, Instant},
 };
@@ -64,10 +64,18 @@ pub struct Stats {
     pub dead: std::sync::atomic::AtomicBool,
 }
 
+/// Обработчик входящих IP-пакетов в обход smoltcp (WARP для программ):
+/// возвращает true, если пакет его и он его забрал.
+pub type RawHook = Arc<dyn Fn(&[u8]) -> bool + Send + Sync>;
+
 pub struct Tunnel {
     cmd: mpsc::Sender<Cmd>,
     wake: Arc<Notify>,
+    raw_out: mpsc::Sender<Vec<u8>>,
+    raw_hook: Arc<RwLock<Option<RawHook>>>,
     pub endpoint: SocketAddr,
+    /// Адрес клиента внутри WARP (172.16.0.2).
+    pub local: Ipv4Addr,
     pub stats: Arc<Stats>,
 }
 
@@ -85,6 +93,16 @@ impl Tunnel {
 
     pub fn wake(&self) -> Arc<Notify> {
         self.wake.clone()
+    }
+
+    /// Отправляет готовый IPv4-пакет (адрес отправителя — `local`) в туннель.
+    /// Если очередь переполнена, пакет теряется: TCP программы перешлёт его сам.
+    pub fn send_raw(&self, pkt: Vec<u8>) -> bool {
+        self.raw_out.try_send(pkt).is_ok()
+    }
+
+    pub fn set_raw_hook(&self, hook: Option<RawHook>) {
+        *self.raw_hook.write().unwrap() = hook;
     }
 }
 
@@ -259,14 +277,16 @@ struct Active {
 
 fn run(acc: &Account, udp: UdpSocket, wg: Wg, endpoint: SocketAddr) -> Arc<Tunnel> {
     let (cmd_tx, cmd_rx) = mpsc::channel(64);
+    let (raw_tx, raw_rx) = mpsc::channel(1024);
+    let raw_hook: Arc<RwLock<Option<RawHook>>> = Arc::default();
     let wake = Arc::new(Notify::new());
     let stats = Arc::new(Stats::default());
     let local: Ipv4Addr = acc.address_v4.split('/').next().unwrap_or("172.16.0.2").parse().unwrap_or(Ipv4Addr::new(172, 16, 0, 2));
     stats.last_rx.store(crate::util::now_unix(), Ordering::Relaxed);
-    let t = Arc::new(Tunnel { cmd: cmd_tx, wake: wake.clone(), endpoint, stats: stats.clone() });
+    let t = Arc::new(Tunnel { cmd: cmd_tx, wake: wake.clone(), raw_out: raw_tx, raw_hook: raw_hook.clone(), endpoint, local, stats: stats.clone() });
     let st = stats.clone();
     tokio::spawn(async move {
-        stack_loop(udp, wg, local, cmd_rx, wake, stats).await;
+        stack_loop(udp, wg, local, cmd_rx, Raw { rx: raw_rx, hook: raw_hook }, wake, stats).await;
         st.dead.store(true, Ordering::Relaxed);
     });
     t
@@ -284,7 +304,13 @@ fn now() -> SInstant {
     SInstant::now()
 }
 
-async fn stack_loop(udp: UdpSocket, mut wg: Wg, local: Ipv4Addr, mut cmd_rx: mpsc::Receiver<Cmd>, wake: Arc<Notify>, stats: Arc<Stats>) {
+/// Пакеты программ в обход smoltcp: исходящие и обработчик входящих.
+struct Raw {
+    rx: mpsc::Receiver<Vec<u8>>,
+    hook: Arc<RwLock<Option<RawHook>>>,
+}
+
+async fn stack_loop(udp: UdpSocket, mut wg: Wg, local: Ipv4Addr, mut cmd_rx: mpsc::Receiver<Cmd>, mut raw: Raw, wake: Arc<Notify>, stats: Arc<Stats>) {
     let mut dev = VDev::default();
     let mut iface = Interface::new(Config::new(HardwareAddress::Ip), &mut dev, now());
     iface.update_ip_addrs(|a| {
@@ -295,7 +321,9 @@ async fn stack_loop(udp: UdpSocket, mut wg: Wg, local: Ipv4Addr, mut cmd_rx: mps
     let mut sockets = SocketSet::new(vec![]);
     let mut pending: Vec<Pending> = Vec::new();
     let mut active: HashMap<SocketHandle, Active> = HashMap::new();
-    let mut next_port: u16 = 40_000;
+    // Порты ниже динамического диапазона Windows (49152–65535): так ответы smoltcp
+    // не путаются с соединениями программ, которые идут в туннель напрямую.
+    let mut next_port: u16 = 30_000;
 
     let mut udp_buf = vec![0u8; WG_BUF];
     let mut out = vec![0u8; WG_BUF];
@@ -317,7 +345,13 @@ async fn stack_loop(udp: UdpSocket, mut wg: Wg, local: Ipv4Addr, mut cmd_rx: mps
                             send_wg(&udp, &wg, &mut p, &stats).await;
                             res = wg.tunn.decapsulate(None, &[], &mut out);
                         }
-                        TunnResult::WriteToTunnelV4(p, _) => { dev.rx.push_back(p.to_vec()); break; }
+                        TunnResult::WriteToTunnelV4(p, _) => {
+                            let hook = raw.hook.read().unwrap().clone();
+                            if !hook.map(|h| h(p)).unwrap_or(false) {
+                                dev.rx.push_back(p.to_vec());
+                            }
+                            break;
+                        }
                         _ => break,
                     }
                 }
@@ -327,7 +361,7 @@ async fn stack_loop(udp: UdpSocket, mut wg: Wg, local: Ipv4Addr, mut cmd_rx: mps
                 let mut sock = tcp::Socket::new(tcp::SocketBuffer::new(vec![0; TCP_BUF]), tcp::SocketBuffer::new(vec![0; TCP_BUF]));
                 sock.set_nagle_enabled(false);
                 sock.set_keep_alive(Some(smoltcp::time::Duration::from_secs(30)));
-                next_port = if next_port >= 64_000 { 40_000 } else { next_port + 1 };
+                next_port = if next_port >= 48_000 { 30_000 } else { next_port + 1 };
                 let o = dst.ip().octets();
                 match sock.connect(iface.context(), (IpAddress::v4(o[0], o[1], o[2], o[3]), dst.port()), next_port) {
                     Ok(()) => {
@@ -337,6 +371,20 @@ async fn stack_loop(udp: UdpSocket, mut wg: Wg, local: Ipv4Addr, mut cmd_rx: mps
                         pending.push(Pending { handle, reply, since: Instant::now(), to_client, from_client, client_rx, client_tx });
                     }
                     Err(e) => { let _ = reply.send(Err(format!("{dst}: {e}"))); }
+                }
+            }
+            Some(first) = raw.rx.recv() => {
+                // Пачкой: всё, что накопилось, без лишних оборотов цикла.
+                let mut next = Some(first);
+                let mut n = 0;
+                while let Some(mut pkt) = next {
+                    if let TunnResult::WriteToNetwork(p) = wg.tunn.encapsulate(&pkt, &mut out) {
+                        let mut p = p.to_vec();
+                        send_wg(&udp, &wg, &mut p, &stats).await;
+                    }
+                    pkt.clear();
+                    n += 1;
+                    next = if n < 256 { raw.rx.try_recv().ok() } else { None };
                 }
             }
             _ = wake.notified() => {}

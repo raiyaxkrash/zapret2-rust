@@ -1,1 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96"><rect x="4" y="4" width="88" height="88" rx="22" fill="#0a0a0a"/><path d="M32 32h32L32 64h32" fill="none" stroke="#fafafa" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1c1c1c"/>
+      <stop offset="1" stop-color="#050505"/>
+    </linearGradient>
+    <radialGradient id="sphere" cx="0.36" cy="0.3" r="0.78">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.45" stop-color="#ececec"/>
+      <stop offset="0.85" stop-color="#a8a8a8"/>
+      <stop offset="1" stop-color="#8a8a8a"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0.72" stop-color="#ffffff" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="32" y="32" width="960" height="960" rx="224" fill="url(#bg)"/>
+  <circle cx="512" cy="512" r="420" fill="url(#glow)"/>
+  <circle cx="512" cy="512" r="330" fill="url(#sphere)"/>
+  <path d="M392 392h240L392 632h240" fill="none" stroke="#0a0a0a" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

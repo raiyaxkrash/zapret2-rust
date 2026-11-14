@@ -3,6 +3,7 @@
 //! идёт через WARP по системному PAC-файлу, остальной — напрямую.
 
 pub mod api;
+pub mod apps;
 pub mod proxy;
 pub mod sysproxy;
 pub mod tunnel;
@@ -34,6 +35,8 @@ struct Inner {
     /// Настройка прокси пользователя до включения WARP.
     previous_pac: Option<String>,
     port: u16,
+    /// WARP для программ без поддержки системного прокси.
+    apps: Option<apps::Redirector>,
 }
 
 #[derive(Default)]
@@ -55,6 +58,8 @@ pub struct WarpStatus {
     pub rx: u64,
     pub tx: u64,
     pub domains: usize,
+    /// Работает перехват для программ.
+    pub apps: bool,
 }
 
 #[derive(Serialize, Clone, Debug, Default)]
@@ -99,6 +104,7 @@ impl Warp {
             rx: t.as_ref().map(|t| t.stats.rx.load(Ordering::Relaxed)).unwrap_or(0),
             tx: t.as_ref().map(|t| t.stats.tx.load(Ordering::Relaxed)).unwrap_or(0),
             domains: self.domains.read().unwrap().len(),
+            apps: running && g.apps.is_some(),
         }
     }
 
@@ -114,15 +120,19 @@ impl Warp {
     /// Обновляет список доменов на лету (без переподключения туннеля).
     pub fn set_domains(&self, domains: Vec<String>) {
         *self.domains.write().unwrap() = domains;
-        let port = self.inner.lock().unwrap().port;
-        if self.is_running() {
-            let _ = sysproxy::set(&Self::pac_url(port));
+        let g = self.inner.lock().unwrap();
+        if g.task.as_ref().map(|t| !t.is_finished()).unwrap_or(false) {
+            let _ = sysproxy::set(&Self::pac_url(g.port));
+            if let Some(a) = &g.apps {
+                a.reseed();
+            }
         }
     }
 
-    pub async fn start(&self, app: &AppHandle, root: &Path, port: u16, junk: bool, domains: Vec<String>) -> Result<(), String> {
+    /// `apps` — папка с WinDivert (zapret2), если нужен WARP для программ.
+    pub async fn start(&self, app: &AppHandle, root: &Path, port: u16, junk: bool, domains: Vec<String>, apps: Option<PathBuf>) -> Result<(), String> {
         self.stop(app);
-        let r = self.spawn(app, root, port, junk, domains).await;
+        let r = self.spawn(app, root, port, junk, domains, apps).await;
         if let Err(e) = &r {
             log(app, e);
             self.inner.lock().unwrap().last_error = Some(e.clone());
@@ -131,7 +141,7 @@ impl Warp {
         r
     }
 
-    async fn spawn(&self, app: &AppHandle, root: &Path, port: u16, junk: bool, domains: Vec<String>) -> Result<(), String> {
+    async fn spawn(&self, app: &AppHandle, root: &Path, port: u16, junk: bool, domains: Vec<String>, apps: Option<PathBuf>) -> Result<(), String> {
         let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port))
             .await
             .map_err(|e| format!("Порт {port} для WARP занят другой программой ({e})"))?;
@@ -171,6 +181,19 @@ impl Warp {
 
         let previous = sysproxy::current().filter(|p| !sysproxy::is_ours(p));
         sysproxy::set(&Self::pac_url(port))?;
+        let redirector = apps.and_then(|bin| {
+            let h = app.clone();
+            match apps::Redirector::start(&bin, self.tunnel.clone(), self.domains.clone(), move |l| log(&h, l)) {
+                Ok(r) => {
+                    log(app, "WARP для программ включён");
+                    Some(r)
+                }
+                Err(e) => {
+                    log(app, e);
+                    None
+                }
+            }
+        });
         {
             let mut g = self.inner.lock().unwrap();
             g.task = Some(task);
@@ -178,6 +201,7 @@ impl Warp {
             g.last_error = None;
             g.previous_pac = previous;
             g.port = port;
+            g.apps = redirector;
         }
         let _ = app.emit("warp-state", ());
         Ok(())
@@ -187,6 +211,9 @@ impl Warp {
         let (had, previous) = {
             let mut g = self.inner.lock().unwrap();
             g.since = None;
+            if let Some(a) = g.apps.take() {
+                a.stop();
+            }
             (g.task.take().map(|t| t.abort()).is_some(), g.previous_pac.take())
         };
         *self.tunnel.write().unwrap() = None;
@@ -272,5 +299,47 @@ mod tests {
         let secs = started.elapsed().as_secs_f64();
         println!("10 МБ за {secs:.1} с: {:.1} Мбит/с", bytes.len() as f64 * 8.0 / secs / 1e6);
         assert_eq!(bytes.len(), 10_000_000);
+    }
+
+    /// WARP для программ, нужны права администратора и загруженный zapret2:
+    /// cargo test --lib live_apps -- --ignored --nocapture
+    /// curl не знает о системном прокси, поэтому через WARP он может пойти только через перехват.
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore]
+    async fn live_apps() {
+        let curl = |url: &str, fmt: Option<&str>| {
+            let mut c = std::process::Command::new("curl.exe");
+            c.args(["-s", "--max-time", "30"]);
+            if let Some(f) = fmt {
+                c.args(["-o", "NUL", "-w", f]);
+            }
+            String::from_utf8_lossy(&c.arg(url).output().unwrap().stdout).to_string()
+        };
+        let direct = curl("https://www.cloudflare.com/cdn-cgi/trace", None);
+        println!("без перехвата:\n{direct}");
+
+        let acc = api::register().await.unwrap();
+        let t = tunnel::start(&acc, true, |l| println!("{l}")).await.unwrap();
+        let shared: Shared = Arc::new(RwLock::new(Some(t)));
+        let domains: proxy::Domains = Arc::new(RwLock::new(vec!["cloudflare.com".into()]));
+        let bin = PathBuf::from(std::env::var("LOCALAPPDATA").unwrap()).join("Zapret2GUI").join("engine").join("bin");
+        let r = apps::Redirector::start(&bin, shared, domains, |l| println!("{l}")).expect("WinDivert: нужны права администратора");
+        tokio::time::sleep(Duration::from_secs(3)).await;
+
+        let via = tokio::task::spawn_blocking(move || {
+            let trace = curl("https://www.cloudflare.com/cdn-cgi/trace", None);
+            let other = curl("https://ya.ru", Some("%{http_code}"));
+            let speed = curl("https://speed.cloudflare.com/__down?bytes=10000000", Some("%{speed_download}"));
+            (trace, other, speed)
+        })
+        .await
+        .unwrap();
+        r.stop();
+        println!("через перехват:\n{}", via.0);
+        println!("ya.ru напрямую: HTTP {}", via.1);
+        let bps: f64 = via.2.trim().parse().unwrap_or(0.0);
+        println!("скорость curl через WARP: {:.1} Мбит/с", bps * 8.0 / 1e6);
+        assert!(via.0.contains("warp=on"), "curl пошёл не через WARP");
+        assert!(via.1.starts_with('2') || via.1.starts_with('3'), "сайт не из списка перестал открываться");
     }
 }

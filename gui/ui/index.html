@@ -9,7 +9,7 @@
 <body>
   <div class="window">
     <header class="titlebar" data-tauri-drag-region>
-      <svg class="app-icon" viewBox="0 0 24 24" data-tauri-drag-region><rect x="1.5" y="1.5" width="21" height="21" rx="5.5" fill="currentColor"/><path d="M8 8h8l-8 8h8" fill="none" stroke="var(--bg)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg class="app-icon" viewBox="0 0 24 24" data-tauri-drag-region><circle cx="12" cy="12" r="10.5" fill="currentColor"/><path d="M8.6 8.6h6.8l-6.8 6.8h6.8" fill="none" stroke="var(--bg)" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <span class="app-title" data-tauri-drag-region>Zapret2</span>
       <button class="update-pill" id="updatePill" hidden title="Установить обновление"><span data-icon="download"></span><span id="updatePillText">Обновление</span></button>
       <div class="caption">
@@ -147,6 +147,7 @@
           <h2 class="section-title">Параметры</h2>
           <div class="settings-group">
             <label class="setting"><span data-icon="flash"></span><div class="setting-text"><div class="setting-title">Маскировка</div><div class="setting-desc">Перед подключением отправлять случайные пакеты, чтобы провайдер не узнал WARP. Выключайте, только если без неё работает лучше</div></div><div class="setting-control"><span class="switch"><input type="checkbox" data-setting="warp_junk" /><i></i></span></div></label>
+            <label class="setting"><span data-icon="chip"></span><div class="setting-text"><div class="setting-title">Для программ</div><div class="setting-desc">Пускать через WARP и программы, которые не используют системный прокси: Spotify, ChatGPT и Claude для компьютера. Работает через драйвер WinDivert из zapret2</div></div><div class="setting-control"><span class="switch"><input type="checkbox" data-setting="warp_apps" /><i></i></span></div></label>
             <div class="setting"><span data-icon="globe"></span><div class="setting-text"><div class="setting-title">Порт локального прокси</div><div class="setting-desc">По умолчанию 40080. Браузеры получают его автоматически через системные настройки прокси</div></div>
               <div class="field-row" style="max-width:220px"><input id="warpPort" type="number" min="1024" max="65535" /><button class="btn" id="saveWarpPort">Сохранить</button></div>
             </div>

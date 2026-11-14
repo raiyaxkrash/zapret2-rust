@@ -5810,7 +5810,7 @@ dependencies = [
 
 [[package]]
 name = "zapret2-gui"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "aes",
  "base64 0.22.1",

@@ -355,7 +355,8 @@ async fn warp_apply(app: &AppHandle, restart: bool) -> CmdResult<()> {
         return Ok(());
     }
     let root = state.paths.root.clone();
-    state.warp.start(app, &root, s.warp_port, s.warp_junk, domains).await
+    let apps = s.warp_apps.then(|| state.paths.engine.join("bin"));
+    state.warp.start(app, &root, s.warp_port, s.warp_junk, domains, apps).await
 }
 
 #[tauri::command]
@@ -635,7 +636,7 @@ async fn save_settings(app: AppHandle, new: Settings) -> CmdResult<Settings> {
         restart_if_running(&app).await?;
     }
     let _ = app.emit("settings-changed", new.clone());
-    let warp_restart = old.warp_port != new.warp_port || old.warp_junk != new.warp_junk;
+    let warp_restart = old.warp_port != new.warp_port || old.warp_junk != new.warp_junk || old.warp_apps != new.warp_apps;
     if old.warp != new.warp || (new.warp && (warp_restart || old.warp_packs != new.warp_packs || old.warp_custom != new.warp_custom)) {
         warp_apply(&app, warp_restart).await?;
     }
