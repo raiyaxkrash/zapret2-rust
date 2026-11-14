@@ -194,7 +194,7 @@ function mockInvoke(cmd, args) {
   switch (cmd) {
     case "get_state": return Promise.resolve({
       status: { running: m.running, since: m.since, last_error: null, command_line: "", pid: null },
-      settings: m.settings, engine_version: "1.0.7", app_version: "2.0.0", conflicts: [], testing: false,
+      settings: m.settings, engine_version: "1.0.7", app_version: "2.1.1", conflicts: [], testing: false,
       data_dir: "C:\\Users\\user\\AppData\\Local\\Zapret2GUI", user_domains: 1, auto_domains: 0, autostart: m.settings.autostart,
       content_version: 2,
       app_update: new URLSearchParams(location.search).get("upd") ? { configured: true, available: true, current: "1.1.0", latest: "1.2.0", notes: "Меньше нагрузка на видеокарту" } : null,
@@ -209,7 +209,7 @@ function mockInvoke(cmd, args) {
       { title: "DNS", status: "good", detail: "Подмены адресов не найдено", advice: "" },
       { title: "YouTube", status: "good", detail: "Открывается с обходом (320 мс)", advice: "" },
       { title: "Discord", status: "good", detail: "Открывается с обходом (180 мс)", advice: "" },
-      { title: "Instagram", status: "bad", detail: "Соединение обрывается (обрыв после 16 КБ): так работает система DPI", advice: "Включите набор «Instagram и Facebook» на странице «Списки сайтов»." },
+      { title: "Instagram", status: "bad", detail: "Соединение обрывается (обрыв после 16 КБ): так работает система DPI", advice: "Текущая стратегия не помогает: подберите стратегию заново на странице «Стратегии»." },
       { title: "ChatGPT и другие нейросети", status: "warn", detail: "Сервис сам закрыл доступ из вашего региона", advice: "Обход DPI тут не поможет: нужен иностранный IP-адрес. Включите WARP." },
       { title: "zapret2", status: "good", detail: "Версия 1.0.7, обход включён", advice: "" },
     ]);
@@ -256,6 +256,8 @@ function mockInvoke(cmd, args) {
       { id: "torrents", name: "Торрент-трекеры", icon: "download", description: "RuTracker, Rutor, NNM-Club, Kinozal и другие", domains: 11 },
       { id: "roblox", name: "Roblox", icon: "gamepad", description: "Сайт и игровые серверы Roblox", domains: 5 },
       { id: "signal", name: "Signal", icon: "chat", description: "Мессенджер Signal", domains: 7 },
+      { id: "games", name: "Игры и лаунчеры", icon: "gamepad", description: "Steam, Epic Games, Riot, Ubisoft, EA, GOG, FACEIT: магазины, обновления, сообщества", domains: 30 },
+      { id: "twitch", name: "Twitch", icon: "play", description: "Стримы, чат и превью Twitch", domains: 7 },
       { id: "hosting", name: "Зарубежные хостинги и CDN", icon: "server", kind: "ipset", description: "Сайты, игры и сервисы на Cloudflare, Hetzner, DigitalOcean, OVH, AWS и других хостингах", domains: 16346 },
       { id: "linkedin", name: "LinkedIn", icon: "briefcase", description: "Сайт и картинки LinkedIn", domains: 3 },
     ]);

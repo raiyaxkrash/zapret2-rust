@@ -1050,6 +1050,7 @@ onVisible(() => { if (!busy) refresh(); });
     render();
     if (demo.get("page")) goto(demo.get("page"));
     if (demo.get("wizard")) openWizard();
+    if (demo.get("page") === "diag") $("#diagRun").click();
     for (let i = 0; i < 300; i++) {
       trafRx.push((2.4 + 1.8 * Math.sin(i / 14) + 0.6 * Math.sin(i / 5.3) + Math.random() * 0.3) * 1048576);
       trafTx.push((0.25 + 0.12 * Math.sin(i / 6)) * 1048576);

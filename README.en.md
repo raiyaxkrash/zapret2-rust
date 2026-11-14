@@ -1,54 +1,76 @@
 <div align="center">
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="gui/screenshots/logo-dark.svg">
+  <img src="gui/screenshots/logo-light.svg" alt="Zapret2 GUI" width="72">
+</picture>
+
 # Zapret2 GUI
 
-**YouTube, Discord, Telegram and other blocked sites on Windows — in one click**
+**YouTube, Discord, Telegram and other blocked sites on Windows — in one click.**<br>
+Install it, tick what doesn't open, and the app takes care of the rest.
 
-A simple desktop app for [zapret2](https://github.com/bol-van/zapret2) (DPI circumvention by bol-van): one button, setup wizard, automatic strategy search, a built-in proxy for Telegram Desktop, ready-made site packs and auto-updates.
+[![Download for Windows](https://img.shields.io/badge/Download%20for%20Windows-0a0a0a?style=for-the-badge&logo=windows11&logoColor=white)](https://github.com/raiyaxkrash/zapret2-rust/releases/latest)
 
-[Русский](README.md)
+[![Release](https://img.shields.io/github/v/release/raiyaxkrash/zapret2-rust?style=flat-square&color=0a0a0a)](https://github.com/raiyaxkrash/zapret2-rust/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/raiyaxkrash/zapret2-rust/total?style=flat-square&color=0a0a0a)](https://github.com/raiyaxkrash/zapret2-rust/tree/stats)
+![Windows 10/11](https://img.shields.io/badge/Windows-10%20%C2%B7%2011%20%C2%B7%20ARM64-555555?style=flat-square)
+![Free](https://img.shields.io/badge/free-open%20source-555555?style=flat-square)
 
-[![Latest release](https://img.shields.io/github/v/release/raiyaxkrash/zapret2-rust?color=0a0a0a)](https://github.com/raiyaxkrash/zapret2-rust/releases/latest)
-![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011%20%7C%20ARM64-555555)
-![Rust + Tauri 2](https://img.shields.io/badge/Rust-Tauri%202-555555)
+[Features](#features) · [Installation](#installation) · [Русский](README.md)
 
-### [⬇ Download the latest version](https://github.com/raiyaxkrash/zapret2-rust/releases/latest)
+<br>
 
-<img src="gui/screenshots/main-dark.png" alt="Zapret2 GUI main screen" width="820">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="gui/screenshots/main-dark.png">
+  <img src="gui/screenshots/main-light.png" alt="Zapret2 GUI main screen" width="860">
+</picture>
 
 </div>
 
 > [!NOTE]
-> The interface is currently in Russian only. The app is fully usable without reading much: the big sphere turns circumvention on and off, and the setup wizard does the rest.
+> The interface is currently in Russian only. It is easy to use anyway: the big sphere turns circumvention on and off, and the setup wizard does the rest.
+
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <h3>One button</h3>
+      Click the sphere and blocked services open. Click again to turn it off. Also available from the tray mini-window.
+    </td>
+    <td width="33%" valign="top">
+      <h3>Sets itself up</h3>
+      The wizard asks what doesn't open and finds a working strategy for your ISP in about a minute. If the ISP changes its blocking, the app notices and re-tunes itself.
+    </td>
+    <td width="33%" valign="top">
+      <h3>Telegram, no setup</h3>
+      A built-in proxy for Telegram Desktop: one click on “Connect in Telegram” and the app works even where it can't connect directly.
+    </td>
+  </tr>
+</table>
 
 ## Features
 
-- **One button.** Click the sphere on the main screen or use the tray mini-window.
-- **Setup wizard.** Pick what doesn't open (YouTube, Discord, Telegram, Instagram, other sites and games) and the app configures itself in about a minute.
-- **Automatic strategy search.** Every strategy is tried in turn and checked against real sites (at least 64 KB is downloaded to catch the "16 KB freeze"). YouTube gets its own strategy.
-- **Telegram Desktop proxy.** A built-in local MTProto proxy (Rust re-implementation of the [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy) protocol) that routes Telegram over WebSocket/TLS. Connect with one click.
-- **Site packs:** Telegram, Instagram & Facebook, X (Twitter), torrent trackers, Roblox, Signal, LinkedIn.
-- **Foreign hosting & CDN pack.** ~16,000 subnets of Cloudflare, Hetzner, DigitalOcean, OVH, AWS, Google Cloud, Oracle and others for sites and games that hang or break mid-download.
-- **ISP hint.** The app detects your ISP and suggests a strategy known to work there; you can share your result to help others.
-- **Check any site:** paste a link to see whether it opens without circumvention and with which strategies.
+- **Services:** YouTube (incl. QUIC), Discord with voice, Telegram Desktop, plus one-click packs — Telegram, Instagram & Facebook, X, torrent trackers, Roblox, Signal, LinkedIn, games & launchers (Steam, Epic, Riot, Ubisoft, EA, GOG, FACEIT), Twitch.
+- **Foreign hosting & CDN:** ~16,000 subnets of Cloudflare, Hetzner, DigitalOcean, OVH, AWS, Google Cloud, Oracle and others for sites and games that hang or break mid-download.
+- **Automatic strategy search** against real sites, with a separate strategy for YouTube.
+- **Watchdog:** checks services every 15 minutes and re-picks a strategy when the ISP changes its blocking.
+- **Diagnostics:** tells DNS spoofing, IP blocking, DPI resets and service-side geo-restrictions apart, with advice for each.
 - **Live status:** service availability and a 10-minute traffic chart on the main screen.
-- **Reliable:** winws2 is restarted if it crashes and never left running after exit.
-- **Auto-updates** for the app, strategies, site lists and zapret2 itself.
-- **Starts with Windows** without a UAC prompt on every login.
-- **Strict black-and-white design**, dark and light themes.
-- **Windows 11 on ARM64** supported.
+- **Auto-updates** for the app, strategies, site lists and zapret2 itself; starts with Windows; dark and light themes; ARM64 support.
 
 ## Installation
 
-1. Download `Zapret2.GUI_X.Y.Z_x64-setup.exe` from the [releases page](https://github.com/raiyaxkrash/zapret2-rust/releases/latest).
-2. Run the installer and allow administrator rights (required to load the WinDivert driver).
-3. The setup wizard opens on first launch: tick what doesn't work and press «Настроить» (Set up).
+1. **Download** `Zapret2.GUI_X.Y.Z_x64-setup.exe` from the [releases page](https://github.com/raiyaxkrash/zapret2-rust/releases/latest).
+2. **Run** the installer and allow administrator rights (required to load the network driver).
+3. **Tick** what doesn't open in the wizard and press «Настроить» (Set up). Done.
 
-Antivirus software sometimes flags the WinDivert driver: it is a packet interception driver, not malware. Installers are built by GitHub Actions from the open source code in this repository — see the [Actions](https://github.com/raiyaxkrash/zapret2-rust/actions) tab for every build log. [VirusTotal scan of 2.0.0](https://www.virustotal.com/gui/file/a7f73e997a1ea0374df15f16ac98f4400e6b81aabc377842ca2f31cc8728e76f): 14 of 65 engines react to the WinDivert driver (`pua.windivert`, `RiskTool.WinDivert`) or generic heuristics; Microsoft Defender, ESET, Dr.Web, BitDefender and Malwarebytes report it clean.
+On first launch the app downloads [zapret2](https://github.com/bol-van/zapret2) from GitHub and verifies it with checksums.
 
-## Credits and license
+> [!NOTE]
+> **Antivirus warnings?** The app uses the WinDivert packet driver — the same as GoodbyeDPI and zapret builds — which some engines flag as “potentially unwanted”. [VirusTotal scan](https://www.virustotal.com/gui/file/a7f73e997a1ea0374df15f16ac98f4400e6b81aabc377842ca2f31cc8728e76f): Microsoft Defender, ESET, Dr.Web, BitDefender and Malwarebytes report it clean. Installers are built by GitHub Actions from this repository's open source code — see the [Actions](https://github.com/raiyaxkrash/zapret2-rust/actions) tab.
 
-- [zapret2](https://github.com/bol-van/zapret2) by **bol-van** — the circumvention engine (MIT).
-- [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy) by **Flowseal** — the protocol the Telegram proxy is based on (MIT).
-- [WinDivert](https://reqrypt.org/windivert.html) — packet interception driver.
-- [Tauri](https://tauri.app) — application framework.
+## Credits
+
+- [**zapret2**](https://github.com/bol-van/zapret2) and [zapret-win-bundle](https://github.com/bol-van/zapret-win-bundle) by **bol-van** — the circumvention engine and ARM64 driver (MIT).
+- [**tg-ws-proxy**](https://github.com/Flowseal/tg-ws-proxy) by **Flowseal** — the protocol behind the Telegram proxy (MIT).
+- [WinDivert](https://reqrypt.org/windivert.html) — packet interception driver. [Tauri](https://tauri.app) — application framework.
