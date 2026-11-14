@@ -309,7 +309,10 @@ mod tests {
     }
 
     fn setup(user_list: &str) -> (Paths, Presets) {
-        let root = std::env::temp_dir().join(format!("z2gui-test-{}-{}", std::process::id(), user_list.len()));
+        // Своя папка для каждого вызова: тесты идут параллельно и не должны делить файлы.
+        static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let root = std::env::temp_dir().join(format!("z2gui-test-{}-{n}", std::process::id()));
         let _ = fs::create_dir_all(root.join("lists"));
         fs::write(root.join("lists").join("user.txt"), user_list).unwrap();
         let paths = Paths {
