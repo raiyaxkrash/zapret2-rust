@@ -32,8 +32,8 @@ struct Inner {
     task: Option<tokio::task::JoinHandle<()>>,
     since: Option<u64>,
     last_error: Option<String>,
-    /// Настройка прокси пользователя до включения WARP.
-    previous_pac: Option<String>,
+    /// Папка данных: там лежит сохранённая настройка прокси пользователя.
+    root: Option<PathBuf>,
     port: u16,
     /// WARP для программ без поддержки системного прокси.
     apps: Option<apps::Redirector>,
@@ -158,13 +158,22 @@ impl Warp {
         let task = tokio::spawn(async move {
             let serve = proxy::serve(listener, shared.clone(), doms, port);
             let supervise = async {
-                // Переподключение, если сервер перестал отвечать или цикл туннеля упал.
+                // Раз в минуту настоящий запрос через туннель. Переподключение, если цикл
+                // туннеля упал, сервер давно молчит или две проверки подряд не прошли.
+                let mut failures = 0;
                 loop {
-                    tokio::time::sleep(Duration::from_secs(30)).await;
-                    let healthy = shared.read().unwrap().as_ref().map(|t| t.healthy()).unwrap_or(false);
-                    if healthy {
+                    tokio::time::sleep(PROBE_EVERY).await;
+                    let current = shared.read().unwrap().clone();
+                    let alive = match current {
+                        Some(t) if t.healthy() => tokio::time::timeout(PROBE_TIMEOUT, trace_tunnel(t)).await.map(|r| r.is_ok()).unwrap_or(false),
+                        _ => false,
+                    };
+                    failures = if alive { 0 } else { failures + 1 };
+                    let dead = shared.read().unwrap().as_ref().map(|t| !t.healthy()).unwrap_or(true);
+                    if !dead && failures < 2 {
                         continue;
                     }
+                    failures = 0;
                     log(&h, "Связь с WARP пропала, переподключение…");
                     match tunnel::start(&acc, junk, |l| log(&h, l)).await {
                         Ok(t) => *shared.write().unwrap() = Some(t),
@@ -179,8 +188,11 @@ impl Warp {
             }
         });
 
-        let previous = sysproxy::current().filter(|p| !sysproxy::is_ours(p));
-        sysproxy::set(&Self::pac_url(port))?;
+        if let Err(e) = sysproxy::enable(root, &Self::pac_url(port)) {
+            task.abort();
+            *self.tunnel.write().unwrap() = None;
+            return Err(e);
+        }
         let redirector = apps.and_then(|bin| {
             let h = app.clone();
             match apps::Redirector::start(&bin, self.tunnel.clone(), self.domains.clone(), move |l| log(&h, l)) {
@@ -199,7 +211,7 @@ impl Warp {
             g.task = Some(task);
             g.since = Some(now_unix());
             g.last_error = None;
-            g.previous_pac = previous;
+            g.root = Some(root.to_path_buf());
             g.port = port;
             g.apps = redirector;
         }
@@ -214,11 +226,13 @@ impl Warp {
             if let Some(a) = g.apps.take() {
                 a.stop();
             }
-            (g.task.take().map(|t| t.abort()).is_some(), g.previous_pac.take())
+            (g.task.take().map(|t| t.abort()).is_some(), g.root.take())
         };
         *self.tunnel.write().unwrap() = None;
         if had {
-            sysproxy::restore(previous.as_deref());
+            if let Some(root) = previous {
+                sysproxy::disable(&root);
+            }
             log(app, "WARP выключен");
             let _ = app.emit("warp-state", ());
         }
@@ -231,36 +245,42 @@ impl Warp {
     /// Проверка: через туннель запрашивает cloudflare.com/cdn-cgi/trace.
     pub async fn trace(&self) -> Result<Trace, String> {
         let t = self.tunnel.read().unwrap().clone().ok_or("WARP не запущен")?;
-        let ip = tokio::net::lookup_host("cloudflare.com:80")
-            .await
-            .map_err(|e| e.to_string())?
-            .find_map(|a| match a { std::net::SocketAddr::V4(v) => Some(v), _ => None })
-            .ok_or("cloudflare.com: адрес не найден")?;
-        let mut c = t.connect(ip).await?;
-        c.tx
-            .send(b"GET /cdn-cgi/trace HTTP/1.1\r\nHost: cloudflare.com\r\nConnection: close\r\n\r\n".to_vec())
-            .await
-            .map_err(|_| "Туннель WARP остановлен".to_string())?;
-        t.wake().notify_one();
-        let mut body = Vec::new();
-        while let Ok(Some(chunk)) = tokio::time::timeout(Duration::from_secs(10), c.rx.recv()).await {
-            body.extend_from_slice(&chunk);
-        }
-        let text = String::from_utf8_lossy(&body);
-        let field = |k: &str| text.lines().find_map(|l| l.strip_prefix(&format!("{k}="))).unwrap_or_default().to_string();
-        if field("ip").is_empty() {
-            return Err("Сервер не ответил через WARP".into());
-        }
-        Ok(Trace { ip: field("ip"), loc: field("loc"), colo: field("colo"), warp: field("warp") == "on" })
+        trace_tunnel(t).await
     }
 }
 
-/// При запуске: если WARP выключен, а в Windows остался наш PAC (например, после аварийного
-/// завершения), убираем его, чтобы не мешал.
-pub fn cleanup_stale() {
-    if sysproxy::current().map(|u| sysproxy::is_ours(&u)).unwrap_or(false) {
-        sysproxy::restore(None);
+const PROBE_EVERY: Duration = Duration::from_secs(60);
+const PROBE_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// Запрос cloudflare.com/cdn-cgi/trace через туннель: адрес и страна выхода.
+async fn trace_tunnel(t: Arc<tunnel::Tunnel>) -> Result<Trace, String> {
+    let ip = tokio::net::lookup_host("cloudflare.com:80")
+        .await
+        .map_err(|e| e.to_string())?
+        .find_map(|a| match a { std::net::SocketAddr::V4(v) => Some(v), _ => None })
+        .ok_or("cloudflare.com: адрес не найден")?;
+    let mut c = t.connect(ip).await?;
+    c.tx
+        .send(b"GET /cdn-cgi/trace HTTP/1.1\r\nHost: cloudflare.com\r\nConnection: close\r\n\r\n".to_vec())
+        .await
+        .map_err(|_| "Туннель WARP остановлен".to_string())?;
+    t.wake().notify_one();
+    let mut body = Vec::new();
+    while let Ok(Some(chunk)) = tokio::time::timeout(Duration::from_secs(10), c.rx.recv()).await {
+        body.extend_from_slice(&chunk);
     }
+    let text = String::from_utf8_lossy(&body);
+    let field = |k: &str| text.lines().find_map(|l| l.strip_prefix(&format!("{k}="))).unwrap_or_default().to_string();
+    if field("ip").is_empty() {
+        return Err("Сервер не ответил через WARP".into());
+    }
+    Ok(Trace { ip: field("ip"), loc: field("loc"), colo: field("colo"), warp: field("warp") == "on" })
+}
+
+/// При запуске с выключенным WARP: если после аварийного завершения остался наш PAC,
+/// возвращаем настройку прокси, сохранённую до включения WARP.
+pub fn cleanup_stale(root: &Path) {
+    sysproxy::disable(root);
 }
 
 #[cfg(test)]
@@ -276,6 +296,9 @@ mod tests {
         let acc = api::register().await.unwrap();
         println!("зарегистрирован: адрес {}, точка {}", acc.address_v4, acc.endpoint);
         let t = tunnel::start(&acc, true, |l| println!("{l}")).await.unwrap();
+        let tr = trace_tunnel(t.clone()).await.unwrap();
+        println!("проверка туннеля: {} {} warp={}", tr.ip, tr.loc, tr.warp);
+        assert!(tr.warp);
         let shared: Shared = Arc::new(RwLock::new(Some(t)));
 
         // Прокси на случайном порту: HTTP CONNECT и обычный HTTP через WARP.

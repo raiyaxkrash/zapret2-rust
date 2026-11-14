@@ -1,6 +1,9 @@
 //! Системный PAC-файл Windows (настройки прокси WinINET): по нему браузеры и
 //! приложения отправляют через WARP только выбранные сайты. Прежняя настройка
-//! пользователя запоминается и возвращается при выключении WARP.
+//! пользователя сохраняется на диск до изменения и возвращается при выключении WARP,
+//! в том числе после аварийного завершения приложения.
+
+use std::{fs, path::Path};
 
 use windows_sys::Win32::Networking::WinInet::{InternetSetOptionW, INTERNET_OPTION_REFRESH, INTERNET_OPTION_SETTINGS_CHANGED};
 
@@ -45,6 +48,32 @@ pub fn set(url: &str) -> Result<(), String> {
     }
     notify();
     Ok(())
+}
+
+fn backup_file(root: &Path) -> std::path::PathBuf {
+    root.join("proxy-backup.txt")
+}
+
+/// Включает наш PAC. Прежняя настройка записывается на диск, если её там ещё нет:
+/// файл от прошлого аварийного завершения хранит настоящую исходную настройку.
+pub fn enable(root: &Path, url: &str) -> Result<(), String> {
+    let file = backup_file(root);
+    if !file.exists() {
+        let previous = current().filter(|p| !is_ours(p)).unwrap_or_default();
+        fs::write(&file, previous).map_err(|e| format!("Не удалось сохранить настройку прокси: {e}"))?;
+    }
+    set(url)
+}
+
+/// Возвращает настройку, сохранённую до включения WARP. Если за это время прокси
+/// поменяла другая программа, её настройку не трогаем.
+pub fn disable(root: &Path) {
+    let file = backup_file(root);
+    let saved = fs::read_to_string(&file).ok();
+    if current().map(|u| is_ours(&u)).unwrap_or(false) {
+        restore(saved.as_deref().map(str::trim).filter(|p| !p.is_empty()));
+    }
+    let _ = fs::remove_file(file);
 }
 
 /// Возвращает прежнюю настройку пользователя (или убирает PAC совсем).

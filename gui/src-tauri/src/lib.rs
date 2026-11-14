@@ -1122,7 +1122,7 @@ pub fn run() {
                 });
             } else {
                 // Наш PAC мог остаться после аварийного завершения.
-                warp::cleanup_stale();
+                warp::cleanup_stale(&handle.state::<AppState>().paths.root);
             }
             if settings.tg_proxy {
                 let h = handle.clone();

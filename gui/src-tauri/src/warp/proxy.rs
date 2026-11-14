@@ -23,7 +23,7 @@ pub type Domains = Arc<RwLock<Vec<String>>>;
 pub fn pac(domains: &[String], port: u16) -> String {
     let list: Vec<String> = domains.iter().map(|d| format!("\"{}\"", d.replace('"', ""))).collect();
     format!(
-        "function FindProxyForURL(url, host) {{\n  host = host.toLowerCase();\n  var d = [{}];\n  for (var i = 0; i < d.length; i++) {{\n    if (host == d[i] || dnsDomainIs(host, \".\" + d[i])) return \"PROXY 127.0.0.1:{port}; DIRECT\";\n  }}\n  return \"DIRECT\";\n}}\n",
+        "function FindProxyForURL(url, host) {{\n  host = host.toLowerCase();\n  var d = [{}];\n  for (var i = 0; i < d.length; i++) {{\n    if (host == d[i] || dnsDomainIs(host, \".\" + d[i])) return \"PROXY 127.0.0.1:{port}\";\n  }}\n  return \"DIRECT\";\n}}\n",
         list.join(", ")
     )
 }
@@ -262,13 +262,16 @@ async fn socks5(mut s: TcpStream, tunnel: Arc<Tunnel>) {
 }
 
 /// Принимает подключения. Все соединения живут в JoinSet и закрываются вместе с задачей.
+/// Больше одновременных соединений не принимаем: защита от зависшей программы.
+const MAX_CONNECTIONS: usize = 512;
+
 pub async fn serve(listener: TcpListener, shared: super::Shared, domains: Domains, port: u16) {
     let mut tasks = JoinSet::new();
     loop {
         while tasks.try_join_next().is_some() {}
         match listener.accept().await {
             Ok((s, peer)) => {
-                if !peer.ip().is_loopback() {
+                if !peer.ip().is_loopback() || tasks.len() >= MAX_CONNECTIONS {
                     continue;
                 }
                 // Туннель берётся на момент подключения: после переподключения — уже новый.
@@ -288,7 +291,7 @@ mod tests {
     fn pac_routes_only_listed() {
         let p = pac(&["chatgpt.com".into(), "openai.com".into()], 40080);
         assert!(p.contains("\"chatgpt.com\", \"openai.com\""));
-        assert!(p.contains("PROXY 127.0.0.1:40080; DIRECT"));
+        assert!(p.contains("\"PROXY 127.0.0.1:40080\""));
         assert!(p.contains("return \"DIRECT\""));
     }
 
