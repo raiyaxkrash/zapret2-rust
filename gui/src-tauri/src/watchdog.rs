@@ -119,6 +119,8 @@ async fn check_once(app: &AppHandle, tracker: &mut Tracker, last_action: &mut Op
     }
 
     let _ = app.emit("toast", "Сервисы перестали открываться. Zapret2 подбирает стратегию заново, это займёт около минуты.");
+    let before = crate::networks::Entry::from_settings(&settings, "rollback");
+    let worked_before = services.values().filter(|ok| **ok).count();
     let report = {
         let _guard = state.busy.lock().await;
         tester::run(app.clone(), None).await
@@ -130,7 +132,13 @@ async fn check_once(app: &AppHandle, tracker: &mut Tracker, last_action: &mut Op
             }
             let settings = state.settings.lock().unwrap().clone();
             let after = by_service(&tester::run_checks("after", "После", &tester::targets(&settings, &state)).await);
-            broken.iter().all(|s| after.get(s).copied().unwrap_or(false))
+            let fixed = broken.iter().all(|s| after.get(s).copied().unwrap_or(false));
+            // Новая стратегия открывает меньше сервисов, чем прежняя: возвращаем прежнюю.
+            if !fixed && after.values().filter(|ok| **ok).count() < worked_before {
+                state.engine.log(app, "[app] Сторож: новая стратегия хуже прежней, возвращаю прежнюю");
+                let _ = crate::set_strategy(app, &before, Some("rollback")).await;
+            }
+            fixed
         }
         Ok(_) => false,
         Err(e) => {

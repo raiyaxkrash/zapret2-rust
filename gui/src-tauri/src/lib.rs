@@ -3,6 +3,7 @@ mod content;
 mod diag;
 mod engine;
 mod isp;
+mod networks;
 mod paths;
 mod platform;
 mod presets;
@@ -197,8 +198,41 @@ pub(crate) async fn apply_report(app: &AppHandle, report: &TestReport) -> CmdRes
     s.save(&state.paths.settings_file())?;
     *state.settings.lock().unwrap() = s.clone();
     let _ = app.emit("settings-changed", s);
+    networks::remember(app, "test");
     let _guard = state.busy.lock().await;
     restart_if_running(app).await
+}
+
+/// Включает стратегию из истории сети (или прежнюю после неудачного переподбора).
+/// `record` — пометка для истории; None, если запись уже есть (стратегия той же сети).
+pub(crate) async fn set_strategy(app: &AppHandle, e: &networks::Entry, record: Option<&str>) -> CmdResult<()> {
+    let state = app.state::<AppState>();
+    let mut s = state.settings.lock().unwrap().clone();
+    s.strategy = e.strategy.clone();
+    s.youtube_strategy = e.youtube_strategy.clone();
+    s.quic = e.quic;
+    s.save(&state.paths.settings_file())?;
+    *state.settings.lock().unwrap() = s.clone();
+    let _ = app.emit("settings-changed", s);
+    if let Some(source) = record {
+        networks::remember(app, source);
+    }
+    let _guard = state.busy.lock().await;
+    restart_if_running(app).await
+}
+
+#[tauri::command]
+fn get_network_history(app: AppHandle) -> Option<networks::View> {
+    networks::current_view(&app)
+}
+
+#[tauri::command]
+async fn restore_strategy(app: AppHandle, at: u64) -> CmdResult<()> {
+    if app.state::<AppState>().testing.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err("Дождитесь окончания подбора стратегии".into());
+    }
+    let e = networks::find(&app, at).ok_or("Запись не найдена")?;
+    set_strategy(&app, &e, Some("restore")).await
 }
 
 async fn restart_if_running(app: &AppHandle) -> CmdResult<()> {
@@ -634,6 +668,9 @@ async fn save_settings(app: AppHandle, new: Settings) -> CmdResult<Settings> {
             && (old.custom_tls != new.custom_tls || old.custom_http != new.custom_http || old.custom_quic != new.custom_quic));
     if engine_changed {
         restart_if_running(&app).await?;
+    }
+    if old.strategy != new.strategy || old.youtube_strategy != new.youtube_strategy || old.quic != new.quic {
+        networks::remember(&app, "manual");
     }
     let _ = app.emit("settings-changed", new.clone());
     let warp_restart = old.warp_port != new.warp_port || old.warp_junk != new.warp_junk || old.warp_apps != new.warp_apps;
@@ -1140,6 +1177,7 @@ pub fn run() {
                 });
             }
             watchdog::spawn(handle.clone());
+            networks::spawn(handle.clone());
             spawn_background(handle);
             Ok(())
         })
@@ -1207,6 +1245,8 @@ pub fn run() {
             get_isp,
             net_traffic,
             get_warp_packs,
+            get_network_history,
+            restore_strategy,
             warp_check,
             warp_start,
             download_engine,

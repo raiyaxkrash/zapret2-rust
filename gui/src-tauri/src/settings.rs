@@ -47,6 +47,8 @@ pub struct Settings {
     pub watchdog: bool,
     /// Сторож сам переподбирает стратегию (иначе только предупреждает).
     pub watchdog_auto: bool,
+    /// Помнить стратегию для каждой сети и включать её при смене сети.
+    pub network_memory: bool,
 
     pub engine_auto_update: bool,
     pub content_auto_update: bool,
@@ -96,6 +98,7 @@ impl Default for Settings {
             warp_custom: Vec::new(),
             watchdog: true,
             watchdog_auto: true,
+            network_memory: true,
             engine_auto_update: true,
             content_auto_update: true,
             app_auto_check: true,

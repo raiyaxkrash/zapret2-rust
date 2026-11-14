@@ -47,7 +47,7 @@ function goto(page) {
   $$(".nav-item").forEach((b) => b.classList.toggle("active", b.dataset.page === page));
   $$(".page").forEach((p) => p.classList.toggle("active", p.id === `page-${page}`));
   $(".content").scrollTop = 0;
-  if (page === "strategies") { loadCommandLine(); loadIsp(); }
+  if (page === "strategies") { loadCommandLine(); loadIsp(); loadNetHistory(); }
   if (page === "warp") loadWarpPacks();
   if (page === "lists") loadList(currentList);
   if (page === "logs") scrollLog();
@@ -901,6 +901,38 @@ function renderIsp() {
   });
 }
 
+/* История стратегий в текущей сети: можно вернуть прежнюю. */
+let netHistory = null;
+const NET_SOURCE = { test: "подбор", manual: "выбрана вручную", rollback: "возврат после переподбора", restore: "возвращена из истории", initial: "была при первом входе в сеть" };
+async function loadNetHistory() {
+  try { netHistory = await invoke("get_network_history"); } catch { netHistory = null; }
+  renderNetHistory();
+}
+function renderNetHistory() {
+  const el = $("#netHistory");
+  const h = netHistory?.history || [];
+  if (!el || !state || h.length < 2) { if (el) el.hidden = true; return; }
+  const s = state.settings;
+  const name = (id) => strategies.find((x) => x.id === id)?.name || id;
+  const when = (t) => new Date(t * 1000).toLocaleString(I18N.locale, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  const isCurrent = (e) => e.strategy === s.strategy && (e.youtube_strategy || "") === (s.youtube_strategy || "") && e.quic === s.quic;
+  el.innerHTML = `<div class="net-title">История стратегий в этой сети</div>` + h.slice(0, 5).map((e) => `
+    <div class="net-row">
+      <div class="net-main"><b>${esc(name(e.strategy))}</b>${e.youtube_strategy ? `<span> · YouTube: </span><span>${esc(name(e.youtube_strategy))}</span>` : ""}${e.quic ? "" : `<span> · без QUIC</span>`}
+        <div class="net-meta"><span>${esc(NET_SOURCE[e.source] || e.source)}</span><span> · ${esc(when(e.at))}</span></div></div>
+      ${isCurrent(e) ? `<span class="badge">сейчас</span>` : `<button class="btn small" data-restore="${e.at}">Вернуть</button>`}
+    </div>`).join("");
+  el.hidden = false;
+  $$("[data-restore]", el).forEach((b) => b.addEventListener("click", async () => {
+    b.disabled = true;
+    try { await invoke("restore_strategy", { at: Number(b.dataset.restore) }); toast("Стратегия возвращена"); await refresh(); renderStrategies(); loadCommandLine(); }
+    catch (e) { toast(errText(e), "err"); b.disabled = false; }
+  }));
+}
+listen("networks-changed", () => loadNetHistory());
+listen("isp-changed", () => { isp = null; loadIsp(); loadNetHistory(); });
+listen("notice", ({ payload }) => toast(payload, "info", 9000));
+
 $("#testBtn").addEventListener("click", () => runTest());
 $("#cancelTestBtn").addEventListener("click", () => invoke("cancel_strategy_test"));
 listen("start-test", () => { goto("strategies"); runTest(); });
@@ -1092,6 +1124,7 @@ listen("settings-changed", ({ payload }) => {
   applyAppearance(payload.theme, null, payload.animations);
   I18N.sync(payload.lang, state.platform?.lang);
   render();
+  renderNetHistory();
   if (strategyChanged) loadCommandLine();
 });
 listen("toast", ({ payload }) => toast(payload, "err", 9000));

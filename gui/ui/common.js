@@ -179,7 +179,7 @@ function mockInvoke(cmd, args) {
   const demo = !!new URLSearchParams(location.search).get("demo");
   const m = (window.__mock ||= {
     running: demo, since: demo ? Math.floor(Date.now() / 1000) - 5025 : null,
-    settings: { packs: demo ? ["telegram", "meta"] : [], strategy: demo ? "seqovl" : "fake_multisplit_md5", youtube_strategy: demo ? "fake_multisplit_md5" : "", youtube: true, discord: true, discord_voice: true, custom: false, custom_mode: "list", quic: true, autostart: false, start_minimized: true, engine_on_launch: true, close_to_tray: true, debug_log: false, engine_auto_update: true, content_auto_update: true, app_auto_check: true, app_update_url: "https://github.com/raiyaxkrash/zapret2-rust/releases/latest/download/latest.json", theme: new URLSearchParams(location.search).get("theme") || "system", lang: "auto", custom_tls: "--payload=tls_client_hello --lua-desync=multisplit:pos=1", custom_http: "", custom_quic: "", tg_proxy: demo, tg_proxy_port: 1443, warp: demo, warp_port: 40080, warp_junk: true, warp_apps: true, warp_packs: ["ai"], warp_custom: [], watchdog: true, watchdog_auto: true, tg_proxy_secret: "0123456789abcdef0123456789abcdef" },
+    settings: { packs: demo ? ["telegram", "meta"] : [], strategy: demo ? "seqovl" : "fake_multisplit_md5", youtube_strategy: demo ? "fake_multisplit_md5" : "", youtube: true, discord: true, discord_voice: true, custom: false, custom_mode: "list", quic: true, autostart: false, start_minimized: true, engine_on_launch: true, close_to_tray: true, debug_log: false, engine_auto_update: true, content_auto_update: true, app_auto_check: true, app_update_url: "https://github.com/raiyaxkrash/zapret2-rust/releases/latest/download/latest.json", theme: new URLSearchParams(location.search).get("theme") || "system", lang: "auto", custom_tls: "--payload=tls_client_hello --lua-desync=multisplit:pos=1", custom_http: "", custom_quic: "", tg_proxy: demo, tg_proxy_port: 1443, warp: demo, warp_port: 40080, warp_junk: true, warp_apps: true, warp_packs: ["ai"], warp_custom: [], watchdog: true, watchdog_auto: true, network_memory: true, tg_proxy_secret: "0123456789abcdef0123456789abcdef" },
     lists: { user: "# Мои сайты\nrutracker.org\n", exclude: "gosuslugi.ru\n", auto: "", youtube: "youtube.com\ngooglevideo.com\n", discord: "discord.com\n" },
   });
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -225,6 +225,14 @@ function mockInvoke(cmd, args) {
       t.tx += (0.2 + 0.1 * Math.sin(t.n / 5)) * 1048576 * 2;
       return Promise.resolve({ rx: Math.round(t.rx), tx: Math.round(t.tx) });
     }
+    case "get_network_history": {
+      const now = Math.floor(Date.now() / 1000);
+      return Promise.resolve({ asn: 12389, name: "PJSC Rostelecom", history: [
+        { strategy: m.settings.strategy, youtube_strategy: m.settings.youtube_strategy, quic: m.settings.quic, at: now - 3600, source: "test" },
+        { strategy: "fake_multisplit_md5", youtube_strategy: "", quic: true, at: now - 86400 * 3, source: "initial" },
+      ] });
+    }
+    case "restore_strategy": return Promise.resolve(null);
     case "get_isp": return wait(300).then(() => ({ isp: { asn: 12389, name: "PJSC Rostelecom" }, hint: null }));
     case "save_settings": m.settings = args.new; return Promise.resolve(m.settings);
     case "get_command_line": return Promise.resolve("engine\\bin\\winws2.exe --wf-tcp-out=80,443 ...");
