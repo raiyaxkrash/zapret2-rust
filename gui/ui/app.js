@@ -130,6 +130,7 @@ function render() {
   $$("#customMode button").forEach((b) => b.classList.toggle("active", b.dataset.mode === s.custom_mode));
   $$("#themeSel button").forEach((b) => b.classList.toggle("active", b.dataset.theme === (s.theme || "system")));
   $$("#langSel button").forEach((b) => b.classList.toggle("active", b.dataset.lang === (s.lang || "auto")));
+  applyMode(s);
   $("#customModeCard").hidden = !s.custom;
   const ud = state.user_domains, ad = state.auto_domains;
   $("#customDesc").textContent =
@@ -899,6 +900,15 @@ function renderIsp() {
     toast("Применена стратегия для вашего провайдера");
     renderStrategies(); loadCommandLine(); renderIsp();
   });
+}
+
+/* Простой режим: скрытые разделы не показываются в меню; если открыт такой, уходим на главную. */
+function applyMode(s) {
+  const simple = !s.expert;
+  document.body.classList.toggle("simple", simple);
+  const open = $(".nav-item.active");
+  if (simple && open?.classList.contains("expert-only")) goto("home");
+  if (simple && currentList !== "user" && $("#page-lists").classList.contains("active")) loadList("user");
 }
 
 /* История стратегий в текущей сети: можно вернуть прежнюю. */

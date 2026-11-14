@@ -52,6 +52,7 @@ Install it, tick what doesn't open, and the app takes care of the rest.
 - **Built-in WARP** for services that block Russia themselves: ChatGPT, Claude, Gemini and other AI tools, Spotify, Intel/AMD/Adobe/JetBrains downloads. Only the selected sites go through the free Cloudflare tunnel; everything else stays direct. Works in browsers and in desktop apps (Spotify, ChatGPT, Claude). Nothing extra to install.
 - **Automatic strategy search** against real sites, with a separate strategy for YouTube.
 - **Watchdog:** checks services every 15 minutes and re-picks a strategy when the ISP changes its blocking.
+- **Simple mode** for newcomers: just Home, site packs, Telegram, WARP and Diagnostics; strategies, the log and fine-tuning live in Expert mode.
 - **Per-network strategies:** home Wi-Fi and a phone hotspot each keep their own working strategy, switched automatically when the network changes, with a history you can revert to.
 - **Diagnostics:** tells DNS spoofing, IP blocking, DPI resets and service-side geo-restrictions apart, with advice for each.
 - **Live status:** service availability and a 10-minute traffic chart on the main screen.

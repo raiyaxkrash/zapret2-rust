@@ -22,12 +22,12 @@
     <div class="app">
       <nav class="nav">
         <button class="nav-item active" data-page="home"><span data-icon="home"></span>Главная</button>
-        <button class="nav-item" data-page="strategies"><span data-icon="sliders"></span>Стратегии</button>
+        <button class="expert-only nav-item" data-page="strategies"><span data-icon="sliders"></span>Стратегии</button>
         <button class="nav-item" data-page="lists"><span data-icon="list"></span>Списки сайтов</button>
         <button class="nav-item" data-page="telegram"><span data-icon="send"></span>Telegram</button>
         <button class="nav-item" data-page="warp"><span data-icon="globe"></span>WARP</button>
         <button class="nav-item" data-page="diag"><span data-icon="search"></span>Диагностика</button>
-        <button class="nav-item" data-page="logs"><span data-icon="terminal"></span>Журнал</button>
+        <button class="expert-only nav-item" data-page="logs"><span data-icon="terminal"></span>Журнал</button>
         <div class="nav-spacer"></div>
         <div class="nav-status" id="navStatus">
           <span class="dot"></span>
@@ -144,8 +144,8 @@
             <div class="editor-foot"><span class="muted" id="warpCustomCount"></span><div class="editor-actions"><button class="btn primary" id="warpCustomSave">Сохранить</button></div></div>
           </div>
 
-          <h2 class="section-title">Параметры</h2>
-          <div class="settings-group">
+          <h2 class="expert-only section-title">Параметры</h2>
+          <div class="expert-only settings-group">
             <label class="setting"><span data-icon="flash"></span><div class="setting-text"><div class="setting-title">Маскировка</div><div class="setting-desc">Перед подключением отправлять случайные пакеты, чтобы провайдер не узнал WARP. Выключайте, только если без неё работает лучше</div></div><div class="setting-control"><span class="switch"><input type="checkbox" data-setting="warp_junk" /><i></i></span></div></label>
             <label class="setting"><span data-icon="chip"></span><div class="setting-text"><div class="setting-title">Для программ</div><div class="setting-desc">Пускать через WARP и программы, которые не используют системный прокси: Spotify, ChatGPT и Claude для компьютера. Работает через драйвер WinDivert из zapret2</div></div><div class="setting-control"><span class="switch"><input type="checkbox" data-setting="warp_apps" /><i></i></span></div></label>
             <div class="setting"><span data-icon="globe"></span><div class="setting-text"><div class="setting-title">Порт локального прокси</div><div class="setting-desc">По умолчанию 40080. Браузеры получают его автоматически через системные настройки прокси</div></div>
@@ -191,8 +191,8 @@
             </div>
           </div>
 
-          <h2 class="section-title">Параметры</h2>
-          <div class="settings-group">
+          <h2 class="expert-only section-title">Параметры</h2>
+          <div class="expert-only settings-group">
             <div class="setting"><span data-icon="send"></span><div class="setting-text"><div class="setting-title">Порт</div><div class="setting-desc">По умолчанию 1443. После смены порта заново подключите прокси в Telegram</div></div>
               <div class="field-row" style="max-width:220px"><input id="tgPort" type="number" min="1024" max="65535" /><button class="btn" id="saveTgPort">Сохранить</button></div>
             </div>
@@ -265,13 +265,13 @@
               <p class="lead">По одному домену в строке. Поддомены учитываются автоматически: <code>example.com</code> включает <code>www.example.com</code>.</p>
             </div>
             <div class="head-actions">
-              <button class="btn" id="openListsDir"><span data-icon="folder"></span>Открыть папку</button>
+              <button class="expert-only btn" id="openListsDir"><span data-icon="folder"></span>Открыть папку</button>
             </div>
           </div>
           <h2 class="section-title" style="margin-top:0">Наборы сайтов</h2>
           <div class="packs" id="packs"></div>
 
-          <div class="settings-group" style="margin-top:24px">
+          <div class="expert-only settings-group" style="margin-top:24px">
             <div class="setting" id="customModeCard">
               <span data-icon="globe"></span>
               <div class="setting-text"><div class="setting-title">Режим «Мои сайты»</div><div class="setting-desc">Как выбирать сайты, к которым применяется обход</div></div>
@@ -287,7 +287,7 @@
             <input type="text" placeholder="Добавить в «Мои сайты»: вставьте ссылку или домен" spellcheck="false" />
             <button class="btn small primary" type="submit">Добавить</button>
           </form>
-          <div class="tabs" id="listTabs">
+          <div class="expert-only tabs" id="listTabs">
             <button class="tab active" data-list="user">Мои сайты</button>
             <button class="tab" data-list="exclude">Исключения</button>
             <button class="tab" data-list="auto">Автосписок</button>
@@ -348,6 +348,7 @@
               </div>
             </div>
             <label class="setting"><span data-icon="flash"></span><div class="setting-text"><div class="setting-title">Анимации</div><div class="setting-desc">Выключите на слабом компьютере или ноутбуке, чтобы интерфейс меньше нагружал видеокарту</div></div><div class="setting-control"><span class="switch"><input type="checkbox" data-setting="animations" /><i></i></span></div></label>
+            <label class="setting"><span data-icon="sliders"></span><div class="setting-text"><div class="setting-title">Режим для опытных</div><div class="setting-desc">Показывать стратегии, журнал и тонкие настройки: порты, режимы списков, подробный журнал</div></div><div class="setting-control"><span class="switch"><input type="checkbox" data-setting="expert" /><i></i></span></div></label>
           </div>
 
           <h2 class="section-title">Запуск</h2>
@@ -400,8 +401,8 @@
 
           <h2 class="section-title">Дополнительно</h2>
           <div class="settings-group">
-            <label class="setting"><span data-icon="terminal"></span><div class="setting-text"><div class="setting-title">Подробный журнал</div><div class="setting-desc">winws2 будет писать отладочный вывод (--debug). Немного нагружает процессор</div></div><div class="setting-control"><span class="state-label"></span><span class="switch"><input type="checkbox" data-setting="debug_log" /><i></i></span></div></label>
-            <div class="setting"><span data-icon="download"></span><div class="setting-text"><div class="setting-title">Источник обновлений приложения</div><div class="setting-desc">Адрес файла latest.json</div></div>
+            <label class="expert-only setting"><span data-icon="terminal"></span><div class="setting-text"><div class="setting-title">Подробный журнал</div><div class="setting-desc">winws2 будет писать отладочный вывод (--debug). Немного нагружает процессор</div></div><div class="setting-control"><span class="state-label"></span><span class="switch"><input type="checkbox" data-setting="debug_log" /><i></i></span></div></label>
+            <div class="expert-only setting"><span data-icon="download"></span><div class="setting-text"><div class="setting-title">Источник обновлений приложения</div><div class="setting-desc">Адрес файла latest.json</div></div>
               <div class="field-row" style="max-width:460px"><input id="updateUrl" type="url" /><button class="btn" id="saveUpdateUrl">Сохранить</button></div>
             </div>
             <div class="setting"><span data-icon="wand"></span><div class="setting-text"><div class="setting-title">Мастер настройки</div><div class="setting-desc">Заново выбрать, что не открывается, и подобрать стратегию</div></div><button class="btn" id="openWizard">Открыть</button></div>

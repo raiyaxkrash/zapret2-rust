@@ -57,6 +57,8 @@ pub struct Settings {
 
     /// "system" | "light" | "dark"
     pub theme: String,
+    /// Режим для опытных: стратегии, журнал и тонкие настройки видны.
+    pub expert: bool,
     /// Язык интерфейса: "auto" | "ru" | "en".
     pub lang: String,
     pub animations: bool,
@@ -104,6 +106,7 @@ impl Default for Settings {
             app_auto_check: true,
             app_update_url: DEFAULT_APP_UPDATE_URL.into(),
             theme: "system".into(),
+            expert: false,
             lang: "auto".into(),
             animations: true,
             tg_proxy: false,
@@ -118,10 +121,14 @@ impl Default for Settings {
 
 impl Settings {
     pub fn load(path: &Path) -> Settings {
-        let mut s: Settings = fs::read_to_string(path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default();
+        let raw = fs::read_to_string(path).ok();
+        let mut s: Settings = raw.as_deref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or_default();
+        // Простой режим появился в 2.4.1: у тех, кто обновляется, всё остаётся на месте.
+        if let Some(v) = raw.as_deref().and_then(|t| serde_json::from_str::<serde_json::Value>(t).ok()) {
+            if v.is_object() && v.get("expert").is_none() {
+                s.expert = true;
+            }
+        }
         if s.app_update_url.trim().is_empty() {
             s.app_update_url = DEFAULT_APP_UPDATE_URL.into();
         }
@@ -139,5 +146,28 @@ impl Settings {
         let tmp = path.with_extension("json.tmp");
         fs::write(&tmp, json).map_err(|e| format!("Не удалось сохранить настройки: {e}"))?;
         fs::rename(&tmp, path).map_err(|e| format!("Не удалось сохранить настройки: {e}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expert_mode_kept_for_existing_users() {
+        let dir = std::env::temp_dir().join(format!("z2-settings-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        // Новая установка: файла нет — простой режим.
+        assert!(!Settings::load(&path).expert);
+        // Настройки из прошлой версии без поля expert — режим для опытных.
+        fs::write(&path, r#"{"strategy":"seqovl"}"#).unwrap();
+        assert!(Settings::load(&path).expert);
+        // Выбор пользователя сохраняется.
+        let mut s = Settings::load(&path);
+        s.expert = false;
+        s.save(&path).unwrap();
+        assert!(!Settings::load(&path).expert);
+        let _ = fs::remove_dir_all(dir);
     }
 }

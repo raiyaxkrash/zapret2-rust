@@ -280,6 +280,8 @@ const I18N = (() => {
     ["Светлая", "Light"],
     ["Тёмная", "Dark"],
     ["Язык", "Language"],
+    ["Режим для опытных", "Expert mode"],
+    ["Показывать стратегии, журнал и тонкие настройки: порты, режимы списков, подробный журнал", "Show strategies, the log and fine-tuning: ports, list modes, verbose log"],
     ["Язык интерфейса. Журнал всегда на русском", "Interface language. The log is always in Russian"],
     ["Анимации", "Animations"],
     ["Выключите на слабом компьютере или ноутбуке, чтобы интерфейс меньше нагружал видеокарту", "Turn off on a slow computer or laptop to reduce the load on the graphics card"],

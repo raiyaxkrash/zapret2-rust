@@ -303,6 +303,8 @@ button.chip:hover { color: var(--text); border-color: var(--text-4); }
 .isp-line > .ico { width: 15px; height: 15px; }
 .isp-line b { color: var(--text); font-weight: 500; }
 .isp-hint::before { content: "·"; margin-right: 10px; }
+/* Простой режим: без стратегий, журнала и тонких настроек. */
+body.simple .expert-only { display: none !important; }
 .net-history { margin: -6px 0 18px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--panel); }
 .net-title { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); margin-bottom: 6px; }
 .net-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 13px; }
