@@ -12,6 +12,7 @@
 [![Сборка](https://img.shields.io/github/actions/workflow/status/raiyaxkrash/zapret2-rust/release.yml?label=%D1%81%D0%B1%D0%BE%D1%80%D0%BA%D0%B0)](https://github.com/raiyaxkrash/zapret2-rust/actions)
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011%20%7C%20ARM64-555555)
 ![Rust + Tauri 2](https://img.shields.io/badge/Rust-Tauri%202-555555)
+[![Скачивания](https://img.shields.io/github/downloads/raiyaxkrash/zapret2-rust/total?label=%D1%81%D0%BA%D0%B0%D1%87%D0%B8%D0%B2%D0%B0%D0%BD%D0%B8%D0%B9&color=555555)](https://github.com/raiyaxkrash/zapret2-rust/tree/stats)
 
 ### [⬇ Скачать последнюю версию](https://github.com/raiyaxkrash/zapret2-rust/releases/latest)
 
@@ -144,9 +145,11 @@ GoodbyeDPI, zapret-discord-youtube и другие сборки winws испол
 | [`gui/`](gui/) | Приложение Zapret2 GUI: Rust (Tauri 2) и интерфейс на HTML/CSS. Сборка, стратегии и выпуск версий описаны в [gui/README.md](gui/README.md) |
 | [`gui/resources/presets.json`](gui/resources/presets.json) | Стратегии и наборы сайтов. Изменения доходят до установленных копий без нового релиза |
 | [`gui/resources/lists/`](gui/resources/lists/) | Встроенные списки доменов (YouTube, Discord и наборы) |
+| [`.github/workflows/stats.yml`](.github/workflows/stats.yml) | Ежедневная статистика по счётчикам скачиваний GitHub (без телеметрии), результат — в ветке [`stats`](https://github.com/raiyaxkrash/zapret2-rust/tree/stats) |
 | [`.github/workflows/release.yml`](.github/workflows/release.yml) | Тесты, сборка и публикация подписанных релизов по тегу `vX.Y.Z` |
-| `binaries/`, `lua/`, `files/`, `nfq2/` и др. | Исходный [zapret2](https://github.com/bol-van/zapret2) v1.0.7 от bol-van. Из него берутся `winws2.exe`, Lua-скрипты и фейковые пакеты для установщика |
-| [`docs/`](docs/) | Документация zapret2: [manual.md](docs/manual.md) (синтаксис стратегий и параметров winws2) |
+| [`gui/scripts/`](gui/scripts/) | Выпуск версий и обновление списка подсетей хостингов |
+
+Сам zapret2 в репозиторий и установщик не входит: при первом запуске приложение скачивает последнюю версию из [релизов bol-van/zapret2](https://github.com/bol-van/zapret2/releases) и проверяет архив и каждый файл по SHA-256. Документация по стратегиям и параметрам winws2: [manual.md](https://github.com/bol-van/zapret2/blob/master/docs/manual.md).
 
 ## Сборка из исходников
 
@@ -162,6 +165,6 @@ npm run build
 
 ## Благодарности и лицензия
 
-- [zapret2](https://github.com/bol-van/zapret2) и [zapret-win-bundle](https://github.com/bol-van/zapret-win-bundle) от **bol-van**: движок обхода `winws2` и ARM64-драйвер, лицензия MIT ([docs/LICENSE.txt](docs/LICENSE.txt)).
+- [zapret2](https://github.com/bol-van/zapret2) и [zapret-win-bundle](https://github.com/bol-van/zapret-win-bundle) от **bol-van**: движок обхода `winws2` и ARM64-драйвер, лицензия MIT ([LICENSE](https://github.com/bol-van/zapret2/blob/master/docs/LICENSE.txt)). zapret2 скачивается с GitHub при первом запуске.
 - [WinDivert](https://reqrypt.org/windivert.html): драйвер перехвата пакетов.
 - [Tauri](https://tauri.app): основа приложения.

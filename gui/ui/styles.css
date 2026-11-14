@@ -289,6 +289,15 @@ button.chip:hover { color: var(--text); border-color: var(--text-4); }
 .tg-hint { flex: 1; min-width: 200px; font-size: 12.5px; color: var(--text-2); }
 .tg-hint.err { color: var(--bad); white-space: pre-wrap; }
 
+/* ---------------------------------------------------------------- диагностика */
+.diag-row { display: grid; grid-template-columns: auto 1fr; gap: 12px; padding: 14px 16px; }
+.diag-row + .diag-row { border-top: 1px solid var(--line); }
+.diag-row .dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; background: var(--text-4); }
+.diag-row.good .dot { background: var(--ok); }
+.diag-row.warn .dot { background: var(--warn); }
+.diag-row.bad .dot { background: var(--err); }
+.diag-advice { font-size: 12.5px; color: var(--text); margin-top: 4px; }
+
 /* ---------------------------------------------------------------- провайдер */
 .isp-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: -10px 0 16px; font-size: 13px; color: var(--text-2); }
 .isp-line > .ico { width: 15px; height: 15px; }

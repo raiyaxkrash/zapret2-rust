@@ -95,7 +95,7 @@ pub fn targets(settings: &Settings, state: &AppState) -> Vec<(String, String)> {
     t
 }
 
-async fn check(service: String, url: String) -> CheckResult {
+pub(crate) async fn check(service: String, url: String) -> CheckResult {
     let started = Instant::now();
     let fail = |url: String, service: String, ms: u64, bytes: usize, e: String| CheckResult { url, service, ok: false, ms, bytes, error: Some(e) };
     let client = reqwest::Client::builder()

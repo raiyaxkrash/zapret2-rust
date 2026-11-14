@@ -1,5 +1,6 @@
 mod autostart;
 mod content;
+mod diag;
 mod engine;
 mod isp;
 mod paths;
@@ -10,6 +11,7 @@ mod tester;
 mod tgproxy;
 mod traffic;
 mod util;
+mod watchdog;
 mod zapret_update;
 
 use std::{
@@ -69,8 +71,81 @@ pub fn args_for(paths: &Paths, settings: &Settings, strategy_id: &str, youtube_i
     build_args(settings, &presets, &strategy, &yt, paths)
 }
 
+#[derive(Serialize, Clone)]
+struct EngineDownload {
+    /// "download" | "install" | "done" | "error"
+    stage: &'static str,
+    percent: Option<u32>,
+    message: String,
+}
+
+/// zapret2 не входит в установщик: если его ещё нет, скачивает последнюю версию
+/// из релизов bol-van/zapret2 (с проверкой SHA-256) и устанавливает.
+pub(crate) async fn ensure_engine(app: &AppHandle) -> CmdResult<()> {
+    static LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _guard = LOCK.lock().await;
+    let state = app.state::<AppState>();
+    let paths = state.paths.clone();
+    if paths.winws().exists() {
+        return Ok(());
+    }
+    let emit = |stage: &'static str, percent: Option<u32>, message: String| {
+        let _ = app.emit("engine-download", EngineDownload { stage, percent, message });
+    };
+    let res: CmdResult<String> = async {
+        let info = match zapret_update::check(&paths).await {
+            Ok(i) => i,
+            Err(e) => {
+                state.engine.log(app, format!("[app] Не удалось узнать последнюю версию zapret2 ({e}), загружаю проверенную"));
+                zapret_update::pinned(&paths)
+            }
+        };
+        state.engine.log(app, format!("[app] Загрузка zapret2 {} с GitHub (bol-van/zapret2)…", info.latest));
+        emit("download", Some(0), format!("Загрузка zapret2 {}…", info.latest));
+        let last = std::sync::atomic::AtomicU32::new(0);
+        let staging = zapret_update::download(&paths, &info, |done, total| {
+            if let Some(t) = total.filter(|t| *t > 0) {
+                let p = (done * 100 / t) as u32;
+                if p != last.swap(p, std::sync::atomic::Ordering::Relaxed) {
+                    emit("download", Some(p), format!("Загрузка zapret2 {}…", info.latest));
+                }
+            }
+        })
+        .await?;
+        emit("install", None, "Установка zapret2…".into());
+        zapret_update::install(&paths, &staging)?;
+        paths.apply_arm64_driver()?;
+        Ok(info.latest)
+    }
+    .await;
+    match res {
+        Ok(v) => {
+            state.engine.log(app, format!("[app] zapret2 {v} установлен"));
+            emit("done", Some(100), format!("zapret2 {v} установлен"));
+            Ok(())
+        }
+        Err(e) => {
+            let msg = format!("Не удалось загрузить zapret2: {e}");
+            state.engine.log(app, format!("[app] {msg}"));
+            emit("error", None, msg.clone());
+            Err(msg)
+        }
+    }
+}
+
+#[tauri::command]
+async fn run_diagnostics(app: AppHandle) -> Vec<diag::DiagItem> {
+    diag::run(app).await
+}
+
+#[tauri::command]
+async fn download_engine(app: AppHandle) -> CmdResult<()> {
+    ensure_engine(&app).await
+}
+
 /// Запускает winws2 с указанной стратегией и проверяет, что он не упал сразу.
 pub async fn start_with(app: &AppHandle, settings: &Settings, strategy_id: &str, youtube_id: Option<&str>) -> CmdResult<()> {
+    ensure_engine(app).await?;
     let state = app.state::<AppState>();
     let args = args_for(&state.paths, settings, strategy_id, youtube_id)?;
     let conflicts = state.engine.conflicts();
@@ -104,6 +179,23 @@ async fn start_current(app: &AppHandle) -> CmdResult<()> {
     }
     update_tray(app);
     r
+}
+
+/// Применяет лучшие стратегии из отчёта подбора (как кнопка «Применить») и перезапускает обход.
+pub(crate) async fn apply_report(app: &AppHandle, report: &TestReport) -> CmdResult<()> {
+    let state = app.state::<AppState>();
+    let mut s = state.settings.lock().unwrap().clone();
+    if let Some(best) = &report.best {
+        s.strategy = best.clone();
+    }
+    if let Some(yt) = &report.best_youtube {
+        s.youtube_strategy = if *yt == s.strategy { String::new() } else { yt.clone() };
+    }
+    s.save(&state.paths.settings_file())?;
+    *state.settings.lock().unwrap() = s.clone();
+    let _ = app.emit("settings-changed", s);
+    let _guard = state.busy.lock().await;
+    restart_if_running(app).await
 }
 
 async fn restart_if_running(app: &AppHandle) -> CmdResult<()> {
@@ -713,7 +805,7 @@ async fn install_engine_update_inner(app: &AppHandle) -> CmdResult<String> {
     }
     let _ = app.emit("engine-update-progress", "Загрузка…");
     state.engine.log(app, format!("[app] Загрузка zapret2 {}…", info.latest));
-    let staging = zapret_update::download(&paths, &info).await?;
+    let staging = zapret_update::download(&paths, &info, |_, _| {}).await?;
 
     let _guard = state.busy.lock().await;
     if state.testing.load(std::sync::atomic::Ordering::SeqCst) {
@@ -955,6 +1047,14 @@ pub fn run() {
                     }
                 });
             }
+            // zapret2 скачивается при первом запуске (в установщик он не входит).
+            if !handle.state::<AppState>().paths.winws().exists() && !settings.engine_on_launch {
+                let h = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = ensure_engine(&h).await;
+                });
+            }
+            watchdog::spawn(handle.clone());
             spawn_background(handle);
             Ok(())
         })
@@ -1021,6 +1121,8 @@ pub fn run() {
             tg_proxy_open,
             get_isp,
             net_traffic,
+            download_engine,
+            run_diagnostics,
             share_isp_result,
         ])
         .build(tauri::generate_context!())

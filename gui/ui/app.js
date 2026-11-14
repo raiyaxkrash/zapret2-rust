@@ -95,6 +95,13 @@ function render() {
     const names = [...new Set(state.conflicts.map((c) => c.name))].join(", ");
     banners.push(`<div class="infobar warn">${icon("alert")}<div>Запущены другие программы обхода (${esc(names)}). Они конфликтуют с Zapret2.</div><button class="btn" id="killConflicts">Завершить</button></div>`);
   }
+  if (engineDl && engineDl.stage !== "done") {
+    const pct = engineDl.percent != null ? ` ${engineDl.percent}%` : "";
+    banners.push(engineDl.stage === "error"
+      ? `<div class="infobar error">${icon("alert")}<div>${esc(engineDl.message)}. Проверьте подключение к интернету.</div><button class="btn small" id="engRetry">Повторить</button></div>`
+      : `<div class="infobar">${icon("download")}<div>${esc(engineDl.message)}${pct}<div class="progress" style="margin:8px 0 0"><div class="progress-bar" style="width:${engineDl.percent ?? 100}%"></div></div></div></div>`);
+  }
+  if (watchdogNote) banners.push(watchdogNote);
   if (st.last_error && !running) {
     banners.push(`<div class="infobar error">${icon("alert")}<div>${esc(st.last_error)}</div><button class="btn" data-goto="logs">Журнал</button></div>`);
   }
@@ -105,6 +112,9 @@ function render() {
   $("#banners").innerHTML = banners.join("");
   $("#armTs")?.addEventListener("click", enableTestsigning);
   $("#killConflicts")?.addEventListener("click", killConflicts);
+  $("#engRetry")?.addEventListener("click", () => { engineDl = { stage: "download", percent: 0, message: "Загрузка zapret2…" }; render(); invoke("download_engine").catch(() => {}); });
+  $("#wdRepick")?.addEventListener("click", () => { watchdogNote = ""; goto("strategies"); runTest(); });
+  $("#wdHide")?.addEventListener("click", () => { watchdogNote = ""; render(); });
   $$("#banners [data-goto]").forEach((b) => b.addEventListener("click", () => goto(b.dataset.goto)));
 
   // переключатели
@@ -742,6 +752,38 @@ $("#wizTg").addEventListener("click", () => $("#tgOpen").click());
 $("#wizShare").addEventListener("click", async () => { try { await invoke("share_isp_result"); } catch (e) { toast(errText(e), "err"); } });
 $("#openWizard").addEventListener("click", openWizard);
 
+/* ===================================================================== диагностика */
+let diagReport = [];
+$("#diagRun").addEventListener("click", async () => {
+  const btn = $("#diagRun");
+  btn.disabled = true;
+  btn.lastChild.textContent = "Проверяем…";
+  $("#diagList").hidden = false;
+  $("#diagList").innerHTML = `<div class="diag-row"><span class="dot" style="animation:blink 1s infinite"></span><div class="setting-desc">Идёт проверка…</div></div>`;
+  try {
+    diagReport = await invoke("run_diagnostics");
+    $("#diagList").innerHTML = diagReport.map((d) => `
+      <div class="diag-row ${d.status}"><span class="dot"></span><div>
+        <div class="setting-title">${esc(d.title)}</div>
+        <div class="setting-desc">${esc(d.detail)}</div>
+        ${d.advice ? `<div class="diag-advice">${esc(d.advice)}</div>` : ""}
+      </div></div>`).join("");
+    $("#diagCopy").hidden = false;
+  } catch (e) {
+    $("#diagList").innerHTML = "";
+    toast(errText(e), "err");
+  } finally {
+    btn.disabled = false;
+    btn.lastChild.textContent = "Проверить снова";
+  }
+});
+$("#diagCopy").addEventListener("click", () => {
+  const mark = { good: "OK", warn: "!", bad: "X", info: "-" };
+  const text = [`Zapret2 GUI ${state?.app_version || ""}, zapret2 ${state?.engine_version || "-"}`,
+    ...diagReport.map((d) => `[${mark[d.status]}] ${d.title}: ${d.detail}${d.advice ? ` (${d.advice})` : ""}`)].join(String.fromCharCode(10));
+  navigator.clipboard.writeText(text).then(() => toast("Отчёт скопирован"));
+});
+
 /* ===================================================================== провайдер */
 let isp = null;
 async function loadIsp() {
@@ -961,6 +1003,31 @@ listen("settings-changed", ({ payload }) => {
   if (strategyChanged) loadCommandLine();
 });
 listen("toast", ({ payload }) => toast(payload, "err", 9000));
+
+/* Первая загрузка zapret2 (в установщик он не входит). */
+let engineDl = null;
+listen("engine-download", ({ payload }) => {
+  engineDl = payload;
+  if (payload.stage === "done") { toast(payload.message); refresh(); }
+  else render();
+});
+
+/* Сторож: сервисы перестали открываться. */
+let watchdogNote = "";
+listen("strategy-broken", ({ payload: b }) => {
+  const names = b.services.map((s) => SERVICE_NAMES[s] || packs.find((p) => p.id === s)?.name || s).join(", ");
+  if (b.repicked && b.fixed) {
+    watchdogNote = "";
+    toast(`${names}: перестали открываться, Zapret2 подобрал новую стратегию`);
+  } else {
+    const text = b.repicked
+      ? `<b>${esc(names)}</b> перестали открываться, и автоподбор не нашёл рабочую стратегию. Попробуйте выключить QUIC или проверить сайт вручную.`
+      : `<b>${esc(names)}</b> перестали открываться: похоже, провайдер изменил блокировку.`;
+    watchdogNote = `<div class="infobar warn">${icon("alert")}<div>${text}</div><button class="btn small" id="wdRepick">Подобрать заново</button><button class="btn small subtle" id="wdHide">Скрыть</button></div>`;
+  }
+  refresh();
+  loadStrategies();
+});
 
 // Конфликтующие процессы и состояние автозапуска могут поменяться извне.
 everyWhileVisible(5000, () => { if (!busy) refresh(); });

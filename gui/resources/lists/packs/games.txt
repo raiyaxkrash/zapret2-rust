@@ -1,0 +1,32 @@
+# Игры и лаунчеры: магазины, обновления, сообщества
+# Steam
+steampowered.com
+steamcommunity.com
+steamstatic.com
+steamcontent.com
+steamserver.net
+steamusercontent.com
+steam-chat.com
+# Epic Games
+epicgames.com
+epicgames.dev
+unrealengine.com
+fortnite.com
+# Riot Games
+riotgames.com
+riotcdn.net
+leagueoflegends.com
+playvalorant.com
+# Ubisoft
+ubisoft.com
+ubi.com
+ubisoftconnect.com
+# EA
+ea.com
+origin.com
+# GOG
+gog.com
+gog-statics.com
+# FACEIT
+faceit.com
+faceit-cdn.net

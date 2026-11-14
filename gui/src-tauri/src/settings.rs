@@ -32,6 +32,10 @@ pub struct Settings {
     pub engine_on_launch: bool,
     pub close_to_tray: bool,
     pub debug_log: bool,
+    /// Сторож: следить, не перестали ли открываться сервисы.
+    pub watchdog: bool,
+    /// Сторож сам переподбирает стратегию (иначе только предупреждает).
+    pub watchdog_auto: bool,
 
     pub engine_auto_update: bool,
     pub content_auto_update: bool,
@@ -71,6 +75,8 @@ impl Default for Settings {
             engine_on_launch: true,
             close_to_tray: true,
             debug_log: false,
+            watchdog: true,
+            watchdog_auto: true,
             engine_auto_update: true,
             content_auto_update: true,
             app_auto_check: true,

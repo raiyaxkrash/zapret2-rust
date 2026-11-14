@@ -25,6 +25,7 @@
         <button class="nav-item" data-page="strategies"><span data-icon="sliders"></span>Стратегии</button>
         <button class="nav-item" data-page="lists"><span data-icon="list"></span>Списки сайтов</button>
         <button class="nav-item" data-page="telegram"><span data-icon="send"></span>Telegram</button>
+        <button class="nav-item" data-page="diag"><span data-icon="search"></span>Диагностика</button>
         <button class="nav-item" data-page="logs"><span data-icon="terminal"></span>Журнал</button>
         <div class="nav-spacer"></div>
         <div class="nav-status" id="navStatus">
@@ -105,6 +106,21 @@
             <input type="text" placeholder="Не открывается сайт? Вставьте ссылку или домен и нажмите Enter" spellcheck="false" />
             <button class="btn small" type="submit">Добавить</button>
           </form>
+        </section>
+
+        <!-- ============================== DIAGNOSTICS -->
+        <section class="page" id="page-diag">
+          <div class="page-head">
+            <div>
+              <h1>Диагностика</h1>
+              <p class="lead">Проверка того, что именно мешает: подмена DNS, блокировка по IP, обрыв соединения или ограничение самого сервиса. Займёт около 20 секунд.</p>
+            </div>
+            <div class="head-actions">
+              <button class="btn" id="diagCopy" hidden><span data-icon="copy"></span>Скопировать отчёт</button>
+              <button class="btn primary" id="diagRun"><span data-icon="search"></span>Проверить</button>
+            </div>
+          </div>
+          <div class="settings-group diag-list" id="diagList" hidden></div>
         </section>
 
         <!-- ============================== TELEGRAM -->
@@ -317,6 +333,12 @@
               </div>
               <label class="toggle-row"><span>Автоматически</span><span class="switch"><input type="checkbox" data-setting="app_auto_check" /><i></i></span></label>
             </div>
+          </div>
+
+          <h2 class="section-title">Сторож</h2>
+          <div class="settings-group">
+            <label class="setting"><span data-icon="check"></span><div class="setting-text"><div class="setting-title">Следить за работой обхода</div><div class="setting-desc">Раз в 15 минут проверять, открываются ли сервисы. Если провайдер поменял блокировку, Zapret2 это заметит</div></div><div class="setting-control"><span class="switch"><input type="checkbox" data-setting="watchdog" /><i></i></span></div></label>
+            <label class="setting"><span data-icon="wand"></span><div class="setting-text"><div class="setting-title">Подбирать стратегию автоматически</div><div class="setting-desc">Когда сервис перестал открываться, сразу подобрать и применить новую стратегию. Иначе — только предупредить</div></div><div class="setting-control"><span class="switch"><input type="checkbox" data-setting="watchdog_auto" /><i></i></span></div></label>
           </div>
 
           <h2 class="section-title">Дополнительно</h2>

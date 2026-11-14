@@ -204,6 +204,15 @@ function mockInvoke(cmd, args) {
     case "start_engine": return wait(900).then(() => { m.running = true; m.since = Math.floor(Date.now() / 1000); });
     case "stop_engine": return wait(200).then(() => { m.running = false; });
     case "get_strategies": return Promise.resolve(strategies);
+    case "run_diagnostics": return wait(1500).then(() => [
+      { title: "Интернет", status: "good", detail: "Подключение есть (84 мс)", advice: "" },
+      { title: "DNS", status: "good", detail: "Подмены адресов не найдено", advice: "" },
+      { title: "YouTube", status: "good", detail: "Открывается с обходом (320 мс)", advice: "" },
+      { title: "Discord", status: "good", detail: "Открывается с обходом (180 мс)", advice: "" },
+      { title: "Instagram", status: "bad", detail: "Соединение обрывается (обрыв после 16 КБ): так работает система DPI", advice: "Включите набор «Instagram и Facebook» на странице «Списки сайтов»." },
+      { title: "ChatGPT и другие нейросети", status: "warn", detail: "Сервис сам закрыл доступ из вашего региона", advice: "Обход DPI тут не поможет: нужен иностранный IP-адрес. Включите WARP." },
+      { title: "zapret2", status: "good", detail: "Версия 1.0.7, обход включён", advice: "" },
+    ]);
     case "net_traffic": {
       // Демо: плавно меняющаяся скорость около 2–6 МБ/с.
       const t = (window.__traf ||= { rx: 1e9, tx: 1e8, n: 0 });

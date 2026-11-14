@@ -9,4 +9,4 @@ https://github.com/bol-van/zapret-win-bundle/blob/master/arm64/WinDivert64.sys
 На ARM64 приложение заменяет им обычный `engine\bin\WinDivert64.sys`. Сам `winws2.exe` (x64)
 работает через встроенную эмуляцию Windows 11. Подписанного драйвера под ARM64 не существует,
 поэтому Windows загрузит его только в режиме тестовой подписи (`bcdedit /set {current} testsigning on`,
-Secure Boot должен быть выключен). Подробнее в разделе «Windows ARM64» файла `docs/manual.md`.
+Secure Boot должен быть выключен). Подробнее в разделе «Windows ARM64» [документации zapret2](https://github.com/bol-van/zapret2/blob/master/docs/manual.md).
