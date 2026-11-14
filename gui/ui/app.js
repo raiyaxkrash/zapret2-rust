@@ -48,6 +48,7 @@ function goto(page) {
   $$(".page").forEach((p) => p.classList.toggle("active", p.id === `page-${page}`));
   $(".content").scrollTop = 0;
   if (page === "strategies") { loadCommandLine(); loadIsp(); loadNetHistory(); }
+  if (page === "settings") loadOthers();
   if (page === "warp") loadWarpPacks();
   if (page === "lists") loadList(currentList);
   if (page === "logs") scrollLog();
@@ -94,8 +95,11 @@ function render() {
   // уведомления
   const banners = [];
   if (state.conflicts.length) {
-    const names = [...new Set(state.conflicts.map((c) => c.name))].join(", ");
-    banners.push(`<div class="infobar warn">${icon("alert")}<div>Запущены другие программы обхода (${esc(names)}). Они конфликтуют с Zapret2.</div><button class="btn" id="killConflicts">Завершить</button></div>`);
+    const names = otherNames();
+    // Рядом с ними Zapret2 работает: WARP и Telegram доступны, нельзя только два обхода сразу.
+    banners.push(st.running
+      ? `<div class="infobar warn">${icon("alert")}<div>Вместе с обходом Zapret2 запущен ${esc(names)}: сайты могут не открываться.</div><button class="btn" id="killConflicts">Отключить</button></div>`
+      : `<div class="infobar">${icon("info")}<div>Работает ${esc(names)}. WARP и прокси для Telegram работают рядом с ним, а обход Zapret2 включится, когда он будет отключён.</div><button class="btn" id="killConflicts">Отключить</button></div>`);
   }
   if (engineDl && engineDl.stage !== "done") {
     const pct = engineDl.percent != null ? ` ${engineDl.percent}%` : "";
@@ -194,6 +198,7 @@ everyWhileVisible(1000, updateUptime);
 /* ===================================================================== actions */
 async function togglePower() {
   if (busy || testing || !state) return;
+  if (!state.status.running && state.conflicts.length && !(await confirmDisableOthers())) return;
   busy = true; render();
   try {
     if (state.status.running) await invoke("stop_engine");
@@ -238,12 +243,54 @@ $$("#themeSel button").forEach((b) => b.addEventListener("click", () => saveSett
 $$("#langSel button").forEach((b) => b.addEventListener("click", () => saveSettings({ lang: b.dataset.lang })));
 $("#ytStrategy").addEventListener("change", (e) => saveSettings({ youtube_strategy: e.target.value }).then(loadCommandLine));
 
+/* Другие программы обхода: zapret-discord-youtube, GoodbyeDPI и другие сборки zapret. */
+let others = [];
+async function loadOthers() {
+  try { others = await invoke("find_other_bypass"); } catch { others = []; }
+  render(); renderOthersSettings();
+}
+function otherNames() {
+  const names = [...new Set((others.length ? others.filter((o) => o.running) : []).map((o) => o.product))];
+  return names.length ? names.join(", ") : [...new Set(state.conflicts.map((c) => c.name))].join(", ");
+}
+async function confirmDisableOthers() {
+  if (!confirm(I18N.t(`Чтобы включить обход Zapret2, нужно отключить ${otherNames()}: два обхода вместе не работают.\n\nСлужба перестанет запускаться вместе с Windows. Вернуть её можно в Настройках → Дополнительно.`))) return false;
+  await killConflicts();
+  return true;
+}
 async function killConflicts() {
   try {
-    const n = await invoke("kill_conflicts");
-    toast(`Завершено процессов: ${n}`);
+    await invoke("kill_conflicts");
+    toast(`Отключено: ${otherNames()}`);
   } catch (e) { toast(errText(e), "err"); }
-  refresh();
+  await refresh();
+  loadOthers();
+}
+
+/* Настройки → Дополнительно: перенос списков и возврат отключённых служб. */
+async function renderOthersSettings() {
+  const el = $("#othersRow");
+  if (!el) return;
+  let disabled = [];
+  try { disabled = await invoke("get_disabled_services"); } catch {}
+  const importable = others.reduce((n, o) => n + o.import_user + o.import_exclude, 0);
+  const products = [...new Set(others.map((o) => o.product))];
+  if (!disabled.length && !importable) { el.hidden = true; return; }
+  el.hidden = false;
+  $("#othersDesc").textContent = disabled.length
+    ? `Отключено Zapret2: ${disabled.map((d) => d.product).join(", ")}`
+    : `Найдено: ${products.join(", ")}`;
+  $("#othersActions").innerHTML = (importable ? `<button class="btn" id="importOthers">Перенести сайты (${importable})</button>` : "")
+    + disabled.map((d) => `<button class="btn" data-restore-service="${esc(d.service)}">Вернуть ${esc(d.product)}</button>`).join("");
+  $("#importOthers")?.addEventListener("click", importOthers);
+  $$("[data-restore-service]").forEach((b) => b.addEventListener("click", async () => {
+    try { toast(await invoke("restore_service", { service: b.dataset.restoreService })); } catch (e) { toast(errText(e), "err", 9000); }
+    await refresh(); loadOthers();
+  }));
+}
+async function importOthers() {
+  try { toast(await invoke("import_other_lists")); } catch (e) { toast(errText(e), "err"); }
+  await refresh(); loadOthers();
 }
 
 /* ===================================================================== доступность сервисов */
@@ -671,8 +718,17 @@ function openWizard() {
     $("#wizNext").disabled = !wizPicked.size;
   }));
   $("#wizNext").disabled = !wizPicked.size;
+  renderWizOthers();
   wizStep(1);
   $("#wizard").hidden = false;
+}
+function renderWizOthers() {
+  const el = $("#wizOthers");
+  const products = [...new Set(others.map((o) => o.product))];
+  const sites = others.reduce((n, o) => n + o.import_user + o.import_exclude, 0);
+  el.hidden = !products.length;
+  if (!products.length) return;
+  el.innerHTML = `${icon("info")}<div>У вас установлен ${esc(products.join(", "))}. Zapret2 отключит его (вернуть можно в Настройках)${sites ? ` и перенесёт ваши сайты: ${sites}` : ""}.</div>`;
 }
 function closeWizard() { $("#wizard").hidden = true; hideOnboarding(); refresh(); }
 
@@ -709,6 +765,12 @@ async function runWizard() {
   const needEngine = yt || dc || patch.packs.length > 0 || state.settings.custom;
   let shared = false;
   try {
+    // Другая программа обхода: переносим её сайты и отключаем, иначе два обхода помешают друг другу.
+    if (others.length && needEngine) {
+      if (others.some((o) => o.import_user + o.import_exclude > 0)) { try { await invoke("import_other_lists"); } catch {} }
+      if (others.some((o) => o.running || o.autostart)) { try { await invoke("kill_conflicts"); } catch {} }
+      others = [];
+    }
     await saveSettings(patch, { quiet: true });
     if (needEngine) {
       // Рекомендация для провайдера: пробуем её первой.
@@ -940,6 +1002,7 @@ function renderNetHistory() {
   }));
 }
 listen("networks-changed", () => loadNetHistory());
+loadOthers();
 listen("isp-changed", () => { isp = null; loadIsp(); loadNetHistory(); });
 listen("notice", ({ payload }) => toast(payload, "info", 9000));
 

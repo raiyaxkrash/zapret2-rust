@@ -405,6 +405,7 @@
             <div class="expert-only setting"><span data-icon="download"></span><div class="setting-text"><div class="setting-title">Источник обновлений приложения</div><div class="setting-desc">Адрес файла latest.json</div></div>
               <div class="field-row" style="max-width:460px"><input id="updateUrl" type="url" /><button class="btn" id="saveUpdateUrl">Сохранить</button></div>
             </div>
+            <div class="setting" id="othersRow" hidden><span data-icon="power"></span><div class="setting-text"><div class="setting-title">Другие программы обхода</div><div class="setting-desc" id="othersDesc"></div></div><div class="field-row" id="othersActions"></div></div>
             <div class="setting"><span data-icon="wand"></span><div class="setting-text"><div class="setting-title">Мастер настройки</div><div class="setting-desc">Заново выбрать, что не открывается, и подобрать стратегию</div></div><button class="btn" id="openWizard">Открыть</button></div>
             <div class="setting"><span data-icon="folder"></span><div class="setting-text"><div class="setting-title">Папка с данными</div><div class="setting-desc" id="dataDir"></div></div><button class="btn" id="openDataDir">Открыть</button></div>
           </div>
@@ -420,6 +421,7 @@
       <div class="wizard-step" data-step="1">
         <h2>Что у вас не открывается?</h2>
         <p class="muted">Отметьте нужное, и Zapret2 сам подберёт настройки. Это займёт около минуты.</p>
+        <div class="infobar" id="wizOthers" hidden></div>
         <div class="packs wizard-choices" id="wizChoices"></div>
         <div class="wizard-actions">
           <button class="btn subtle" id="wizSkip">Пропустить</button>

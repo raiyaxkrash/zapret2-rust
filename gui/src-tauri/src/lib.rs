@@ -4,6 +4,7 @@ mod diag;
 mod engine;
 mod isp;
 mod networks;
+mod others;
 mod paths;
 mod platform;
 mod presets;
@@ -805,9 +806,57 @@ fn get_last_report(state: State<'_, AppState>) -> Option<TestReport> {
     state.last_report.lock().unwrap().clone()
 }
 
+/// Отключает другие программы обхода: службы переводятся на ручной запуск (можно вернуть).
 #[tauri::command]
-fn kill_conflicts(state: State<'_, AppState>) -> usize {
-    state.engine.kill_conflicts()
+async fn kill_conflicts(app: AppHandle) -> usize {
+    let state = app.state::<AppState>();
+    let (paths, own) = (state.paths.clone(), state.engine.status().pid);
+    tauri::async_runtime::spawn_blocking(move || others::stop_all(&paths, own)).await.unwrap_or(0)
+}
+
+#[tauri::command]
+async fn find_other_bypass(app: AppHandle) -> Vec<others::Other> {
+    let state = app.state::<AppState>();
+    let (paths, own) = (state.paths.clone(), state.engine.status().pid);
+    tauri::async_runtime::spawn_blocking(move || others::detect(&paths, own)).await.unwrap_or_default()
+}
+
+#[tauri::command]
+async fn import_other_lists(app: AppHandle) -> CmdResult<String> {
+    let state = app.state::<AppState>();
+    let (paths, own) = (state.paths.clone(), state.engine.status().pid);
+    let (user, exclude) = tauri::async_runtime::spawn_blocking(move || others::import_lists(&paths, own)).await.map_err(|e| e.to_string())??;
+    if user > 0 {
+        let mut s = state.settings.lock().unwrap().clone();
+        if !s.custom {
+            s.custom = true;
+            s.save(&state.paths.settings_file())?;
+            *state.settings.lock().unwrap() = s.clone();
+            let _ = app.emit("settings-changed", s);
+        }
+    }
+    if user + exclude > 0 {
+        let _guard = state.busy.lock().await;
+        restart_if_running(&app).await?;
+    }
+    Ok(format!("Перенесено сайтов: {}", user + exclude))
+}
+
+#[tauri::command]
+fn get_disabled_services(state: State<'_, AppState>) -> Vec<others::Disabled> {
+    others::disabled(&state.paths)
+}
+
+#[tauri::command]
+async fn restore_service(app: AppHandle, service: String) -> CmdResult<String> {
+    let state = app.state::<AppState>();
+    if state.engine.is_running() {
+        return Err("Сначала выключите обход Zapret2: вместе они работать не могут".into());
+    }
+    let paths = state.paths.clone();
+    let name = service.clone();
+    tauri::async_runtime::spawn_blocking(move || others::restore(&paths, &name)).await.map_err(|e| e.to_string())??;
+    Ok(format!("Служба {service} снова запускается вместе с Windows"))
 }
 
 #[tauri::command]
@@ -1145,6 +1194,10 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     let state = h.state::<AppState>();
                     let _guard = state.busy.lock().await;
+                    if !state.engine.conflicts().is_empty() {
+                        state.engine.log(&h, "[app] Работает другая программа обхода: обход Zapret2 не включаю, WARP и Telegram работают");
+                        return;
+                    }
                     if let Err(e) = start_current(&h).await {
                         let _ = h.emit("toast", format!("Не удалось включить обход: {e}"));
                     }
@@ -1225,6 +1278,10 @@ pub fn run() {
             cancel_strategy_test,
             get_last_report,
             kill_conflicts,
+            find_other_bypass,
+            import_other_lists,
+            get_disabled_services,
+            restore_service,
             open_folder,
             open_url,
             check_engine_update,

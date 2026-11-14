@@ -191,7 +191,7 @@ function mockInvoke(cmd, args) {
   switch (cmd) {
     case "get_state": return Promise.resolve({
       status: { running: m.running, since: m.since, last_error: null, command_line: "", pid: null },
-      settings: m.settings, engine_version: "1.0.7", app_version: "2.1.1", conflicts: [], testing: false,
+      settings: m.settings, engine_version: "1.0.7", app_version: "2.1.1", conflicts: new URLSearchParams(location.search).get("others") && !m.running ? [{ name: "winws.exe", pid: 4242 }] : [], testing: false,
       data_dir: "C:\\Users\\user\\AppData\\Local\\Zapret2GUI", user_domains: 1, auto_domains: 0, autostart: m.settings.autostart,
       content_version: 2,
       app_update: new URLSearchParams(location.search).get("upd") ? { configured: true, available: true, current: "1.1.0", latest: "1.2.0", notes: "Меньше нагрузка на видеокарту" } : null,
@@ -225,6 +225,10 @@ function mockInvoke(cmd, args) {
       t.tx += (0.2 + 0.1 * Math.sin(t.n / 5)) * 1048576 * 2;
       return Promise.resolve({ rx: Math.round(t.rx), tx: Math.round(t.tx) });
     }
+    case "find_other_bypass": return Promise.resolve(new URLSearchParams(location.search).get("others") ? [{ product: "zapret-discord-youtube", service: "zapret", autostart: true, running: true, folder: "C:\\zapret-discord-youtube", import_user: 3, import_exclude: 1 }] : []);
+    case "get_disabled_services": return Promise.resolve([]);
+    case "import_other_lists": return Promise.resolve("Перенесено сайтов: 4");
+    case "restore_service": return Promise.resolve("Служба zapret снова запускается вместе с Windows");
     case "get_network_history": {
       const now = Math.floor(Date.now() / 1000);
       return Promise.resolve({ asn: 12389, name: "PJSC Rostelecom", history: [

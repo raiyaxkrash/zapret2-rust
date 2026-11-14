@@ -68,7 +68,7 @@ mod job {
 
 const MAX_LOG: usize = 3000;
 /// Процессы, которые тоже используют WinDivert и мешают работе.
-const CONFLICTING: &[&str] = &["winws.exe", "winws2.exe", "goodbyedpi.exe"];
+const CONFLICTING: &[&str] = crate::others::PROCESSES;
 
 #[derive(Default)]
 struct Inner {
@@ -296,13 +296,5 @@ impl Engine {
                 (CONFLICTING.contains(&lname.as_str()) && Some(pid) != own).then_some(Conflict { name, pid })
             })
             .collect()
-    }
-
-    pub fn kill_conflicts(&self) -> usize {
-        let list = self.conflicts();
-        for c in &list {
-            let _ = hidden_command("taskkill").args(["/F", "/PID", &c.pid.to_string()]).output();
-        }
-        list.len()
     }
 }
