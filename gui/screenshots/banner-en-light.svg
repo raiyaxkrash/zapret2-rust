@@ -15,7 +15,7 @@
     <circle cx="250" cy="170" r="110" fill="url(#sphere)"/>
     <path d="M210 130h80l-80 80h80" fill="none" stroke="#ffffff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
     <text x="470" y="128" font-size="64" font-weight="700" letter-spacing="-1.5" fill="#0a0a0a">Zapret2 GUI</text>
-    <text x="470" y="178" font-size="27" fill="#5c5c5c">YouTube, Discord, Telegram and ChatGPT</text>
+    <text x="470" y="178" font-size="27" fill="#5c5c5c">YouTube, Discord, Telegram and other sites</text>
     <text x="470" y="214" font-size="27" fill="#5c5c5c">on Windows — in one click</text>
     <rect x="470" y="248" width="68" height="34" rx="17" fill="#ffffff" stroke="#dcdcdc"/><text x="504.0" y="270" text-anchor="middle" font-size="15" fill="#333333">Free</text><rect x="548" y="248" width="128" height="34" rx="17" fill="#ffffff" stroke="#dcdcdc"/><text x="612.0" y="270" text-anchor="middle" font-size="15" fill="#333333">Open source</text><rect x="686" y="248" width="231" height="34" rx="17" fill="#ffffff" stroke="#dcdcdc"/><text x="801.5" y="270" text-anchor="middle" font-size="15" fill="#333333">Windows 10 · 11 · ARM64</text>
   </g>

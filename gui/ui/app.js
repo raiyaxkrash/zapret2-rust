@@ -693,7 +693,6 @@ const WIZ_CHOICES = [
   { id: "discord", name: "Discord", icon: "chat", desc: "Сайт, приложение и голосовые каналы" },
   { id: "telegram", name: "Telegram", icon: "send", desc: "Приложение Telegram Desktop" },
   { id: "meta", name: "Instagram и Facebook", icon: "camera", desc: "Instagram, Facebook, WhatsApp" },
-  { id: "ai", name: "Нейросети", icon: "wand", desc: "ChatGPT, Claude, Gemini — через WARP" },
   { id: "hosting", name: "Другие сайты и игры", icon: "server", desc: "Грузятся бесконечно или обрываются" },
 ];
 let wizPicked = new Set(["youtube", "discord"]);
@@ -704,7 +703,7 @@ function wizStep(n) { $$(".wizard-step").forEach((el) => { el.hidden = el.datase
 function openWizard() {
   const s = state.settings;
   wizPicked = new Set(WIZ_CHOICES.map((c) => c.id).filter((id) =>
-    id === "telegram" ? s.tg_proxy : id === "ai" ? (s.warp && (s.warp_packs || []).includes("ai")) : ["youtube", "discord"].includes(id) ? s[id] : (s.packs || []).includes(id)));
+    id === "telegram" ? s.tg_proxy : ["youtube", "discord"].includes(id) ? s[id] : (s.packs || []).includes(id)));
   if (!wizPicked.size) wizPicked = new Set(["youtube", "discord"]);
   $("#wizChoices").innerHTML = WIZ_CHOICES.map((c) => `
     <button class="pack ${wizPicked.has(c.id) ? "on" : ""}" data-id="${c.id}">
@@ -749,18 +748,13 @@ async function runWizard() {
   const work = (title, sub, pct) => { $("#wizWorkTitle").textContent = title; $("#wizWorkSub").textContent = sub; if (pct != null) $("#wizBar").style.width = `${pct}%`; };
   work("Применяем настройки…", "", 5);
   const yt = wizPicked.has("youtube"), dc = wizPicked.has("discord");
-  const packIds = WIZ_CHOICES.map((c) => c.id).filter((id) => !["youtube", "discord", "telegram", "ai"].includes(id));
+  const packIds = WIZ_CHOICES.map((c) => c.id).filter((id) => !["youtube", "discord", "telegram"].includes(id));
   const keepPacks = (state.settings.packs || []).filter((id) => !packIds.includes(id));
   const patch = {
     youtube: yt, discord: dc, discord_voice: dc,
     packs: [...keepPacks, ...packIds.filter((id) => wizPicked.has(id))],
     tg_proxy: wizPicked.has("telegram"),
   };
-  // Нейросети закрыли доступ сами: для них включается WARP с набором «Нейросети».
-  if (wizPicked.has("ai")) {
-    patch.warp = true;
-    patch.warp_packs = [...new Set([...(state.settings.warp_packs || []), "ai"])];
-  }
   // Только Telegram: обход не нужен, хватит прокси.
   const needEngine = yt || dc || patch.packs.length > 0 || state.settings.custom;
   let shared = false;
@@ -835,6 +829,8 @@ async function loadWarpPacks() {
 function fmtBytes(n) {
   return n >= 1073741824 ? `${(n / 1073741824).toFixed(1)} ГБ` : n >= 1048576 ? `${(n / 1048576).toFixed(1)} МБ` : `${Math.round(n / 1024)} КБ`;
 }
+/* Как WARP скрыт от провайдера (подбирается автоматически). */
+const WARP_MASK = { junk: "случайные пакеты", dns: "маскировка под DNS", quic: "маскировка под QUIC", plain: "без маскировки" };
 function renderWarp() {
   if (!state || !state.warp) return;
   const w = state.warp, s = state.settings, on = !!s.warp;
@@ -844,17 +840,21 @@ function renderWarp() {
   $("#warpActions").hidden = !on;
   $("#warpCheck").hidden = !w.running;
   $("#warpRetry").hidden = !failed;
+  $("#warpRepick").hidden = !(w.running || failed);
   $("#warpHint").textContent = failed ? w.last_error
-    : w.running ? `Получено ${fmtBytes(w.rx)}, отправлено ${fmtBytes(w.tx)}` : "Подключение…";
+    : w.running ? `Получено ${fmtBytes(w.rx)}, отправлено ${fmtBytes(w.tx)}${w.mask ? ` · ${WARP_MASK[w.mask] || w.mask}` : ""}${state.status.running ? " · через обход" : ""}`
+    : "Подбираем способ подключения…";
   $("#warpHint").classList.toggle("err", !!failed);
   $("#warpDesc").textContent = !on ? "Выключен"
     : failed ? "Не подключён" : connecting ? "Подключение…"
     : w.connected ? `Подключён через ${w.endpoint} · ${w.domains} ${plural(w.domains, "сайт", "сайта", "сайтов")}${w.apps ? " · браузеры и программы" : ""}` : "Переподключение…";
-  $("#warpHomeDesc").textContent = !on ? "Нейросети и другие сервисы"
+  $("#warpHomeDesc").textContent = !on ? "Туннель для заблокированных сайтов"
     : failed ? "Ошибка, подробнее в разделе WARP" : w.connected ? "Подключён" : "Подключение…";
 
   const enabled = new Set(s.warp_packs || []);
   const box = $("#warpPacks");
+  // Готовых наборов может не быть: тогда только свои сайты.
+  box.hidden = $("#warpPacksTitle").hidden = !warpPacks.length;
   const html = warpPacks.map((p) => `
     <button class="pack ${enabled.has(p.id) ? "on" : ""}" data-id="${esc(p.id)}" title="${esc(p.description)}">
       <div class="pack-top"><span class="pack-ico">${icon(p.icon || "globe")}</span><span class="pack-check">${icon("tick")}</span></div>
@@ -897,6 +897,14 @@ $("#warpCheck").addEventListener("click", async () => {
     $("#warpHint").textContent = t.warp ? `Работает: ваш адрес через WARP ${t.ip}, страна ${t.loc}` : `Ответ получен, но WARP не активен (${t.ip})`;
   } catch (e) { toast(errText(e), "err"); }
   btn.disabled = false;
+});
+$("#warpRepick").addEventListener("click", async () => {
+  const btn = $("#warpRepick");
+  btn.disabled = true;
+  $("#warpHint").textContent = "Подбираем способ подключения…";
+  try { await invoke("warp_repick"); toast("Способ подключения к WARP подобран заново"); } catch (e) { toast(errText(e), "err", 9000); }
+  btn.disabled = false;
+  refresh();
 });
 $("#warpRetry").addEventListener("click", async () => {
   $("#warpRetry").disabled = true;

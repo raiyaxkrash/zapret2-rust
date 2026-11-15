@@ -96,7 +96,7 @@ impl Default for Settings {
             warp_port: crate::warp::DEFAULT_PORT,
             warp_junk: true,
             warp_apps: true,
-            warp_packs: vec!["ai".into()],
+            warp_packs: vec![],
             warp_custom: Vec::new(),
             watchdog: true,
             watchdog_auto: true,

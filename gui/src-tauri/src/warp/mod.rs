@@ -1,6 +1,7 @@
-//! Встроенный Cloudflare WARP: бесплатный туннель для сервисов, которые сами закрыли
-//! доступ из региона (нейросети, музыка, загрузки программ). Трафик выбранных сервисов
-//! идёт через WARP по системному PAC-файлу, остальной — напрямую.
+//! Встроенный Cloudflare WARP: бесплатный туннель для сайтов, которые провайдер блокирует
+//! так, что обход DPI их не открывает. Трафик выбранных сайтов идёт через WARP по системному
+//! PAC-файлу (и перехватом для программ), остальной — напрямую. Сервисы, закрытые по стране,
+//! WARP не откроет: Cloudflare привязывает адрес WARP к стране пользователя.
 
 pub mod api;
 pub mod apps;
@@ -44,6 +45,8 @@ pub struct Warp {
     inner: Mutex<Inner>,
     tunnel: Shared,
     domains: proxy::Domains,
+    /// Способ подключения, которым сейчас работает туннель.
+    route: Arc<Mutex<Option<tunnel::Route>>>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -60,6 +63,8 @@ pub struct WarpStatus {
     pub domains: usize,
     /// Работает перехват для программ.
     pub apps: bool,
+    /// Маскировка, которую подобрала программа: "dns", "quic", "junk" или "plain".
+    pub mask: Option<tunnel::Mask>,
 }
 
 #[derive(Serialize, Clone, Debug, Default)]
@@ -80,9 +85,35 @@ async fn account(root: &Path) -> Result<api::Account, String> {
     if let Some(acc) = fs::read_to_string(&file).ok().and_then(|t| serde_json::from_str::<api::Account>(&t).ok()) {
         return Ok(acc);
     }
-    let acc = api::register().await?;
+    let acc = api::register().await.map_err(|e| {
+        format!("Не удалось зарегистрировать WARP: адрес регистрации у вашего провайдера заблокирован ({e}). Включите обход (сферу на главной) — регистрация пройдёт через него, и WARP подключится сам")
+    })?;
     let _ = fs::write(&file, serde_json::to_string_pretty(&acc).unwrap_or_default());
     Ok(acc)
+}
+
+fn route_file(root: &Path) -> PathBuf {
+    root.join("warp-route.json")
+}
+
+/// Способ подключения, который сработал в прошлый раз.
+fn load_route(root: &Path) -> Option<tunnel::Route> {
+    fs::read_to_string(route_file(root)).ok().and_then(|t| serde_json::from_str(&t).ok())
+}
+
+fn save_route(root: &Path, r: &tunnel::Route) {
+    let _ = fs::write(route_file(root), serde_json::to_string_pretty(r).unwrap_or_default());
+}
+
+/// Настройки подключения: подбор маскировки, QUIC из zapret2 и прошлый рабочий способ.
+fn options(root: &Path, auto: bool, preferred: Option<tunnel::Route>) -> tunnel::Options {
+    let quic = fs::read(root.join("engine").join("fake").join("quic_initial_www_google_com.bin")).ok().map(Arc::new);
+    tunnel::Options { auto, quic, preferred }
+}
+
+/// Забыть подобранный способ: при следующем подключении подбор начнётся заново.
+pub fn reset_route(root: &Path) {
+    let _ = fs::remove_file(route_file(root));
 }
 
 fn log(app: &AppHandle, line: impl AsRef<str>) {
@@ -105,6 +136,7 @@ impl Warp {
             tx: t.as_ref().map(|t| t.stats.tx.load(Ordering::Relaxed)).unwrap_or(0),
             domains: self.domains.read().unwrap().len(),
             apps: running && g.apps.is_some(),
+            mask: if running { self.route.lock().unwrap().as_ref().map(|r| r.mask) } else { None },
         }
     }
 
@@ -130,9 +162,10 @@ impl Warp {
     }
 
     /// `apps` — папка с WinDivert (zapret2), если нужен WARP для программ.
-    pub async fn start(&self, app: &AppHandle, root: &Path, port: u16, junk: bool, domains: Vec<String>, apps: Option<PathBuf>) -> Result<(), String> {
+    /// `auto` — подбирать маскировку (настройка «Маскировка»).
+    pub async fn start(&self, app: &AppHandle, root: &Path, port: u16, auto: bool, domains: Vec<String>, apps: Option<PathBuf>) -> Result<(), String> {
         self.stop(app);
-        let r = self.spawn(app, root, port, junk, domains, apps).await;
+        let r = self.spawn(app, root, port, auto, domains, apps).await;
         if let Err(e) = &r {
             log(app, e);
             self.inner.lock().unwrap().last_error = Some(e.clone());
@@ -141,19 +174,23 @@ impl Warp {
         r
     }
 
-    async fn spawn(&self, app: &AppHandle, root: &Path, port: u16, junk: bool, domains: Vec<String>, apps: Option<PathBuf>) -> Result<(), String> {
+    async fn spawn(&self, app: &AppHandle, root: &Path, port: u16, auto: bool, domains: Vec<String>, apps: Option<PathBuf>) -> Result<(), String> {
         let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port))
             .await
             .map_err(|e| format!("Порт {port} для WARP занят другой программой ({e})"))?;
         log(app, "Подключение к WARP…");
         let acc = account(root).await?;
         let h = app.clone();
-        let t = tunnel::start(&acc, junk, move |l| log(&h, l)).await?;
+        let (t, route) = tunnel::start(&acc, &options(root, auto, load_route(root)), move |l| log(&h, l)).await?;
+        save_route(root, &route);
+        *self.route.lock().unwrap() = Some(route);
         *self.tunnel.write().unwrap() = Some(t);
         *self.domains.write().unwrap() = domains;
 
         let shared = self.tunnel.clone();
         let doms = self.domains.clone();
+        let current_route = self.route.clone();
+        let data_root = root.to_path_buf();
         let h = app.clone();
         let task = tokio::spawn(async move {
             let serve = proxy::serve(listener, shared.clone(), doms, port);
@@ -175,8 +212,14 @@ impl Warp {
                     }
                     failures = 0;
                     log(&h, "Связь с WARP пропала, переподключение…");
-                    match tunnel::start(&acc, junk, |l| log(&h, l)).await {
-                        Ok(t) => *shared.write().unwrap() = Some(t),
+                    // Сначала прежний способ, затем подбор заново (провайдер мог поменять блокировку).
+                    let prev = current_route.lock().unwrap().clone();
+                    match tunnel::start(&acc, &options(&data_root, auto, prev), |l| log(&h, l)).await {
+                        Ok((t, route)) => {
+                            save_route(&data_root, &route);
+                            *current_route.lock().unwrap() = Some(route);
+                            *shared.write().unwrap() = Some(t);
+                        }
                         Err(e) => log(&h, e),
                     }
                     let _ = h.emit("warp-state", ());
@@ -295,7 +338,7 @@ mod tests {
     async fn live_warp() {
         let acc = api::register().await.unwrap();
         println!("зарегистрирован: адрес {}, точка {}", acc.address_v4, acc.endpoint);
-        let t = tunnel::start(&acc, true, |l| println!("{l}")).await.unwrap();
+        let t = tunnel::start(&acc, &tunnel::Options { auto: true, ..Default::default() }, |l| println!("{l}")).await.unwrap().0;
         let tr = trace_tunnel(t.clone()).await.unwrap();
         println!("проверка туннеля: {} {} warp={}", tr.ip, tr.loc, tr.warp);
         assert!(tr.warp);
@@ -315,6 +358,16 @@ mod tests {
         assert!(https.contains("warp=on"));
         let http = client.get("http://cloudflare.com/cdn-cgi/trace").send().await.unwrap().text().await.unwrap();
         assert!(http.contains("warp=on"));
+
+        // Видят ли сервисы страну: OpenAI отвечает 403 unsupported_country для закрытых стран.
+        if std::env::var("Z2_GEO").is_ok() {
+            let t = client.get("https://chatgpt.com/cdn-cgi/trace").send().await.unwrap().text().await.unwrap();
+            println!("chatgpt.com видит: {}", t.lines().filter(|l| l.starts_with("loc=") || l.starts_with("colo=")).collect::<Vec<_>>().join(" "));
+            let r = client.get("https://api.openai.com/v1/models").send().await.unwrap();
+            let code = r.status();
+            let body = r.text().await.unwrap_or_default();
+            println!("api.openai.com: HTTP {code} {}", body.chars().take(160).collect::<String>().replace('\n', " "));
+        }
 
         // Скорость: 10 МБ через туннель.
         let started = std::time::Instant::now();
@@ -342,7 +395,7 @@ mod tests {
         println!("без перехвата:\n{direct}");
 
         let acc = api::register().await.unwrap();
-        let t = tunnel::start(&acc, true, |l| println!("{l}")).await.unwrap();
+        let t = tunnel::start(&acc, &tunnel::Options { auto: true, ..Default::default() }, |l| println!("{l}")).await.unwrap().0;
         let shared: Shared = Arc::new(RwLock::new(Some(t)));
         let domains: proxy::Domains = Arc::new(RwLock::new(vec!["cloudflare.com".into()]));
         let bin = PathBuf::from(std::env::var("LOCALAPPDATA").unwrap()).join("Zapret2GUI").join("engine").join("bin");

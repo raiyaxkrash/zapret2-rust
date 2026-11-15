@@ -114,6 +114,9 @@ const DISCORD_VOICE_UDP: &str = "19294-19344,50000-50100";
 
 /// Собирает аргументы winws2. Все пути относительные: рабочий каталог — `paths.root`.
 /// `yt` — стратегия для YouTube (может совпадать с основной `strategy`).
+/// Порты точек WARP (см. warp::tunnel::ENDPOINTS).
+pub const WARP_UDP: &str = "500,854,894,1701,2408,4500,8854";
+
 pub fn build_args(settings: &Settings, presets: &Presets, strategy: &Strategy, yt: &Strategy, paths: &Paths) -> Result<Vec<String>, String> {
     let mut tcp_ports: Vec<&str> = Vec::new();
     let mut need_quic = false;
@@ -148,6 +151,22 @@ pub fn build_args(settings: &Settings, presets: &Presets, strategy: &Strategy, y
         profiles.push(tcp_profile(strategy, YT_TCP, &f));
         need_quic = true;
         profiles.push(if settings.quic { quic_profile(strategy, &f) } else { quic_block(&f) });
+    }
+
+    // WARP через обход. Регистрация: адрес API пропускается с текущей стратегией.
+    // Рукопожатие: zapret2 сам узнаёт пакет WireGuard и ставит перед ним поддельный
+    // запрос DNS, чтобы система DPI приняла поток за DNS. Сервер WARP подделку отбрасывает.
+    if settings.warp {
+        let mut reg = vec!["--filter-tcp=443".to_string(), "--filter-l7=tls".to_string(), "--hostlist-domains=cloudflareclient.com".to_string()];
+        reg.extend(strategy.tls.iter().cloned());
+        tcp_ports.push("443");
+        profiles.push(reg);
+        profiles.push(vec![
+            format!("--filter-udp={WARP_UDP}"),
+            "--filter-l7=wireguard".to_string(),
+            "--payload=wireguard_initiation".to_string(),
+            "--lua-desync=fake:blob=dns_fake:repeats=4".to_string(),
+        ]);
     }
 
     for (enabled, list, ports, s) in [
@@ -258,7 +277,8 @@ pub fn build_args(settings: &Settings, presets: &Presets, strategy: &Strategy, y
         }
     }
 
-    if profiles.is_empty() {
+    let only_warp = settings.warp && profiles.len() == 2;
+    if profiles.is_empty() || only_warp {
         return Err(if settings.custom && !settings.youtube && !settings.discord && !settings.discord_voice && settings.packs.is_empty() {
             "Список «Мои сайты» пуст. Добавьте домены или выберите режим «Все сайты».".into()
         } else {
@@ -279,8 +299,15 @@ pub fn build_args(settings: &Settings, presets: &Presets, strategy: &Strategy, y
     if !ports.is_empty() {
         args.push(format!("--wf-tcp-out={}", ports.join(",")));
     }
+    let mut udp_ports: Vec<&str> = Vec::new();
     if need_quic {
-        args.push("--wf-udp-out=443".into());
+        udp_ports.push("443");
+    }
+    if settings.warp {
+        udp_ports.push(WARP_UDP);
+    }
+    if !udp_ports.is_empty() {
+        args.push(format!("--wf-udp-out={}", udp_ports.join(",")));
     }
     if settings.discord_voice {
         args.push("--wf-raw-part=@engine/filters/windivert_part.discord_media.txt".into());
@@ -295,6 +322,9 @@ pub fn build_args(settings: &Settings, presets: &Presets, strategy: &Strategy, y
         ]
         .map(String::from),
     );
+    if settings.warp {
+        args.push("--blob=dns_fake:@engine/fake/dns.bin".into());
+    }
     if settings.debug_log {
         args.push("--debug=1".into());
     }
@@ -354,6 +384,46 @@ mod tests {
             warp_packs: vec![],
         };
         (paths, presets)
+    }
+
+    #[test]
+    fn warp_profiles_only_when_warp_on() {
+        let (paths, presets) = setup("");
+        let st = s("main");
+        let off = build_args(&base(), &presets, &st, &st, &paths).unwrap();
+        assert!(!off.iter().any(|a| a.contains("wireguard") || a.contains("cloudflareclient")));
+        let on = build_args(&Settings { warp: true, ..base() }, &presets, &st, &st, &paths).unwrap();
+        assert!(on.contains(&format!("--wf-udp-out=443,{WARP_UDP}")), "{on:?}");
+        assert!(on.contains(&"--blob=dns_fake:@engine/fake/dns.bin".to_string()));
+        let p = profiles(&on);
+        assert!(p.iter().any(|x| x.contains(&"--hostlist-domains=cloudflareclient.com".to_string()) && x.contains(&"--lua-desync=tls_main".to_string())));
+        assert!(p.iter().any(|x| x.contains(&"--filter-l7=wireguard".to_string()) && x.contains(&"--payload=wireguard_initiation".to_string())));
+        // Только WARP без сервисов обхода — по-прежнему «ничего не выбрано».
+        let none = Settings { warp: true, youtube: false, discord: false, ..base() };
+        assert!(build_args(&none, &presets, &st, &st, &paths).is_err());
+    }
+
+    /// Настоящий winws2 проверяет командную строку (без перехвата и без прав администратора):
+    /// cargo test --lib live_dry_run -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn live_dry_run() {
+        let paths = Paths::new(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("resources")).unwrap();
+        let presets = Presets::load(&paths).unwrap();
+        let settings = Settings { warp: true, discord_voice: true, ..base() };
+        for st in &presets.strategies {
+            let args = build_args(&settings, &presets, st, st, &paths).unwrap();
+            let out = std::process::Command::new(paths.engine.join("bin").join("winws2.exe"))
+                .current_dir(&paths.root)
+                .env("__COMPAT_LAYER", "RunAsInvoker")
+                .arg("--dry-run")
+                .args(&args)
+                .output()
+                .unwrap();
+            let text = String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
+            println!("{}: {}", st.id, text.lines().last().unwrap_or_default());
+            assert!(out.status.success() && text.contains("command line parameters verified"), "{}: {text}", st.id);
+        }
     }
 
     fn base() -> Settings {

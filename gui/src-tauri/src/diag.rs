@@ -152,7 +152,6 @@ pub async fn run(app: AppHandle) -> Vec<DiagItem> {
     }
 
     // 4. Ограничение со стороны самого сервиса (на примере ChatGPT).
-    let warp_on = state.warp.is_running();
     match c.get("https://api.openai.com/v1/models").send().await {
         Ok(resp) => {
             let status = resp.status().as_u16();
@@ -162,11 +161,7 @@ pub async fn run(app: AppHandle) -> Vec<DiagItem> {
                     "ChatGPT и другие нейросети",
                     "warn",
                     "Сервис сам закрыл доступ из вашего региона",
-                    if warp_on {
-                        "WARP включён: проверьте, что набор «Нейросети» выбран на странице WARP. Эта проверка идёт напрямую, а браузер пойдёт через WARP."
-                    } else {
-                        "Обход DPI тут не поможет: нужен иностранный IP-адрес. Включите WARP."
-                    },
+                    "Ни обход, ни WARP тут не помогут: сервис проверяет страну, а Cloudflare показывает ему вашу настоящую страну. Нужен VPN с сервером за границей.",
                 ));
             } else {
                 out.push(item("ChatGPT и другие нейросети", "good", "Доступ из вашего региона не ограничен", ""));
@@ -179,7 +174,7 @@ pub async fn run(app: AppHandle) -> Vec<DiagItem> {
     if state.settings.lock().unwrap().warp {
         let w = state.warp.clone();
         out.push(match w.trace().await {
-            Ok(t) if t.warp => item("WARP", "good", format!("Работает: адрес {} ({})", t.ip, t.loc), ""),
+            Ok(t) if t.warp => item("WARP", "good", format!("Работает: адрес {} ({})", t.ip, t.loc), "Сайты видят через WARP эту же страну: закрытые для неё сервисы WARP не откроет."),
             Ok(t) => item("WARP", "warn", format!("Ответ получен, но WARP не активен ({})", t.ip), "Выключите и включите WARP на странице WARP."),
             Err(e) => item("WARP", "bad", e, "Возможно, провайдер блокирует WARP. Проверьте, что включена «Маскировка» на странице WARP."),
         });

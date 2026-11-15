@@ -2,7 +2,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="gui/screenshots/banner-en-dark.svg">
-  <img src="gui/screenshots/banner-en-light.svg" alt="Zapret2 GUI: YouTube, Discord, Telegram and ChatGPT on Windows in one click" width="100%">
+  <img src="gui/screenshots/banner-en-light.svg" alt="Zapret2 GUI: YouTube, Discord, Telegram and other sites on Windows in one click" width="100%">
 </picture>
 
 <br><br>
@@ -52,8 +52,8 @@
   <tr>
     <td width="33%" valign="top">
       <img src="gui/screenshots/icons/warp.svg" width="44" alt=""><br>
-      <h3>ChatGPT and Spotify</h3>
-      Built-in WARP for services that block Russia themselves. Only the selected sites go through the tunnel, in browsers and in desktop apps.
+      <h3>WARP tunnel</h3>
+      For sites your ISP blocks so that the bypass can't open them. Only the selected sites go through the tunnel, in browsers and in desktop apps.
     </td>
     <td width="33%" valign="top">
       <img src="gui/screenshots/icons/telegram.svg" width="44" alt=""><br>
@@ -78,7 +78,7 @@
 - One-click site packs: Telegram, Instagram & Facebook, X (Twitter), torrent trackers, Roblox, Signal, LinkedIn, games & launchers (Steam, Epic Games, Riot, Ubisoft, EA, GOG, FACEIT), Twitch.
 - Foreign hosting & CDN: ~16,000 subnets of Cloudflare, Hetzner, DigitalOcean, OVH, AWS and others for sites and games that hang or break mid-download.
 - Any site of your own: paste a link and it's added.
-- Through WARP: ChatGPT, Claude, Gemini and other AI tools, Spotify, Intel/AMD/Adobe/JetBrains downloads, plus your own sites.
+- Through WARP: any of your own sites the bypass can't open. WARP finds a way your ISP lets through by itself.
 
 **Looks after itself**
 - Strategy search against real sites, with a separate strategy for YouTube.
@@ -102,7 +102,7 @@
     <td width="50%"><img src="gui/screenshots/strategies.png" alt="Strategy search"></td>
   </tr>
   <tr>
-    <td align="center"><sub><b>WARP</b><br>AI tools and services closed to Russia</sub></td>
+    <td align="center"><sub><b>WARP</b><br>a tunnel for blocked sites</sub></td>
     <td align="center"><sub><b>Strategy search</b><br>YouTube and other services separately</sub></td>
   </tr>
   <tr>
@@ -127,7 +127,7 @@ Under the hood it's the same [zapret2](https://github.com/bol-van/zapret2) by bo
 | Strategy choice | finds and applies one itself | console test, you pick the `.bat` | you pick the mode |
 | Re-picks when the ISP changes blocking | ✓ watchdog | — | — |
 | Separate strategy per network | ✓ | — | — |
-| ChatGPT, Claude, Spotify (WARP) | ✓ built in | — | — |
+| WARP tunnel for blocked sites | ✓ built in | — | — |
 | Telegram Desktop proxy | ✓ built in | — | — |
 | Diagnostics: what's wrong and what to do | ✓ | conflict check | — |
 | Updates | automatic: app, strategies, lists | version check, manual download | manual |
@@ -167,19 +167,19 @@ flowchart LR
     A --> D["Telegram proxy<br/>127.0.0.1:1443"]
     D -->|WebSocket over TLS| E["Telegram servers"]
     A --> F["WARP"]
-    F -->|WireGuard| G["ChatGPT, Spotify<br/>and others"]
+    F -->|WireGuard| G["Sites the bypass<br/>can't open"]
 ```
 
 - **Bypass.** zapret2 slightly alters the first packets of a connection so the ISP's blocking system stops recognizing them. Sites open directly: no VPN, no speed loss.
 - **Telegram.** A separate built-in proxy carries Telegram Desktop traffic over WebSocket; no bypass needed.
-- **WARP.** Services that block Russia themselves go through the free Cloudflare tunnel. Browsers learn about it from the system proxy settings, and desktop apps' connections are intercepted by the same driver zapret2 uses. Only the selected sites go through the tunnel.
+- **WARP.** Sites your ISP blocks outright go through the free Cloudflare tunnel. The app finds how to hide WARP from the ISP by itself and checks that data really flows through the tunnel. Browsers learn about it from the system proxy settings, and desktop apps' connections are intercepted by the same driver zapret2 uses.
 
 ## FAQ
 
 <details>
 <summary><b>ChatGPT, Claude or Spotify say they're unavailable in my country</b></summary>
 
-These services block Russia themselves, so a DPI bypass won't help: you need a foreign IP. Open the WARP page, turn it on and pick the packs you need (“AI”, “Music”, “Software and development”) or add your own sites. Only they will go through WARP, in browsers and in desktop apps. The “Check” button shows which country you're exiting from.
+These services block Russia themselves and check your country by IP. A DPI bypass won't help, and neither will WARP: Cloudflare deliberately shows sites the user's real country. You need a VPN with a server abroad. Zapret2 GUI works alongside it, though with the VPN on you don't need the bypass: traffic already leaves the country.
 </details>
 
 <details>

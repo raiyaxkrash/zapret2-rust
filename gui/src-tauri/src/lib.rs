@@ -183,7 +183,18 @@ async fn start_current(app: &AppHandle) -> CmdResult<()> {
         state.engine.stop(app);
     }
     update_tray(app);
+    if r.is_ok() && settings.warp && !app.state::<AppState>().warp.is_running() {
+        let h = app.clone();
+        tauri::async_runtime::spawn(async move {
+            log_warp(&h, "Обход включён: пробую подключить WARP через него");
+            let _ = warp_apply(&h, false).await;
+        });
+    }
     r
+}
+
+fn log_warp(app: &AppHandle, line: &str) {
+    app.state::<AppState>().engine.log(app, format!("[warp] {line}"));
 }
 
 /// Применяет лучшие стратегии из отчёта подбора (как кнопка «Применить») и перезапускает обход.
@@ -377,6 +388,9 @@ fn warp_domains(state: &AppState, s: &Settings) -> Vec<String> {
 
 /// Приводит WARP в соответствие с настройками.
 async fn warp_apply(app: &AppHandle, restart: bool) -> CmdResult<()> {
+    // Подключения по очереди: иначе два запуска сразу борются за порт прокси.
+    static LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _guard = LOCK.lock().await;
     let state = app.state::<AppState>();
     let s = state.settings.lock().unwrap().clone();
     if !s.warp {
@@ -407,6 +421,14 @@ async fn warp_check(app: AppHandle) -> CmdResult<warp::Trace> {
 
 #[tauri::command]
 async fn warp_start(app: AppHandle) -> CmdResult<warp::WarpStatus> {
+    warp_apply(&app, true).await?;
+    Ok(app.state::<AppState>().warp.status())
+}
+
+/// Забыть подобранный способ подключения и подобрать заново.
+#[tauri::command]
+async fn warp_repick(app: AppHandle) -> CmdResult<warp::WarpStatus> {
+    warp::reset_route(&app.state::<AppState>().paths.root);
     warp_apply(&app, true).await?;
     Ok(app.state::<AppState>().warp.status())
 }
@@ -664,6 +686,7 @@ async fn save_settings(app: AppHandle, new: Settings) -> CmdResult<Settings> {
         || old.custom_mode != new.custom_mode
         || old.quic != new.quic
         || old.packs != new.packs
+        || old.warp != new.warp
         || old.debug_log != new.debug_log
         || (new.strategy == "custom"
             && (old.custom_tls != new.custom_tls || old.custom_http != new.custom_http || old.custom_quic != new.custom_quic));
@@ -1306,6 +1329,7 @@ pub fn run() {
             restore_strategy,
             warp_check,
             warp_start,
+            warp_repick,
             download_engine,
             run_diagnostics,
             share_isp_result,

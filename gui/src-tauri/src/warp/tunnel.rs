@@ -34,6 +34,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Точки подключения WARP: если основной порт блокируется, пробуются другие.
 pub const ENDPOINTS: &[&str] = &[
+    "engage.cloudflareclient.com:2408",
     "162.159.192.1:2408",
     "162.159.192.1:500",
     "162.159.193.10:1701",
@@ -158,7 +159,54 @@ impl Device for VDev {
 struct Wg {
     tunn: Tunn,
     reserved: [u8; 3],
-    junk: bool,
+    mask: Mask,
+    quic: Option<Arc<Vec<u8>>>,
+}
+
+/// Маскировка рукопожатия: что отправить перед ним, чтобы система DPI не узнала WireGuard.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Mask {
+    /// Запрос DNS (как сигнатурный пакет I1 в AmneziaWG).
+    Dns,
+    /// Поддельный QUIC Initial (файл из zapret2).
+    Quic,
+    /// Случайные пакеты (как Jc в AmneziaWG).
+    Junk,
+    /// Без маскировки.
+    Plain,
+}
+
+/// Способ подключения: точка и маскировка. Рабочий запоминается и используется дальше.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Route {
+    pub endpoint: String,
+    pub mask: Mask,
+}
+
+/// Настройки подключения.
+#[derive(Clone, Default)]
+pub struct Options {
+    /// Подбирать маскировку (иначе только без неё).
+    pub auto: bool,
+    /// Поддельный QUIC Initial из zapret2, если он загружен.
+    pub quic: Option<Arc<Vec<u8>>>,
+    /// Способ, который сработал в прошлый раз.
+    pub preferred: Option<Route>,
+}
+
+/// Запрос DNS типа A к популярному домену: такой пакет системы DPI пропускают.
+fn dns_query() -> Vec<u8> {
+    const NAMES: &[&str] = &["update.microsoft.com", "www.google.com", "ya.ru", "www.cloudflare.com"];
+    let mut r = [0u8; 3];
+    let _ = getrandom::getrandom(&mut r);
+    let mut p = vec![r[0], r[1], 0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, 0];
+    for label in NAMES[r[2] as usize % NAMES.len()].split('.') {
+        p.push(label.len() as u8);
+        p.extend_from_slice(label.as_bytes());
+    }
+    p.extend_from_slice(&[0, 0, 1, 0, 1]);
+    p
 }
 
 impl Wg {
@@ -186,9 +234,25 @@ async fn send_junk(udp: &UdpSocket) {
     }
 }
 
+/// Маскирующие пакеты перед рукопожатием.
+async fn send_mask(udp: &UdpSocket, wg: &Wg) {
+    match wg.mask {
+        Mask::Dns => {
+            let _ = udp.send(&dns_query()).await;
+        }
+        Mask::Quic => {
+            if let Some(q) = &wg.quic {
+                let _ = udp.send(q).await;
+            }
+        }
+        Mask::Junk => send_junk(udp).await,
+        Mask::Plain => {}
+    }
+}
+
 async fn send_wg(udp: &UdpSocket, wg: &Wg, pkt: &mut [u8], stats: &Stats) {
-    if wg.junk && pkt.first() == Some(&1) {
-        send_junk(udp).await;
+    if pkt.first() == Some(&1) {
+        send_mask(udp, wg).await;
     }
     wg.mark(pkt);
     stats.tx.fetch_add(pkt.len() as u64, Ordering::Relaxed);
@@ -196,13 +260,13 @@ async fn send_wg(udp: &UdpSocket, wg: &Wg, pkt: &mut [u8], stats: &Stats) {
 }
 
 /// Подключается к точке WARP и проверяет рукопожатие. Возвращает UDP-сокет и состояние WireGuard.
-async fn handshake(acc: &Account, endpoint: SocketAddr, junk: bool, limit: Duration) -> Result<(UdpSocket, Wg), String> {
-    let udp = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.map_err(|e| e.to_string())?;
+async fn handshake(acc: &Account, endpoint: SocketAddr, mask: Mask, quic: Option<Arc<Vec<u8>>>, limit: Duration) -> Result<(UdpSocket, Wg), String> {
+    let udp = UdpSocket::bind((bind_ip(), 0)).await.map_err(|e| e.to_string())?;
     udp.connect(endpoint).await.map_err(|e| e.to_string())?;
     let mut idx = [0u8; 4];
     let _ = getrandom::getrandom(&mut idx);
     let tunn = Tunn::new(acc.secret()?, acc.peer()?, None, Some(25), u32::from_le_bytes(idx) >> 8, None);
-    let wg = Wg { tunn, reserved: acc.reserved(), junk };
+    let wg = Wg { tunn, reserved: acc.reserved(), mask, quic };
     let mut wg = wg;
     let stats = Stats::default();
     let mut out = vec![0u8; WG_BUF];
@@ -236,23 +300,128 @@ async fn handshake(acc: &Account, endpoint: SocketAddr, junk: bool, limit: Durat
     Err(format!("{endpoint}: нет ответа"))
 }
 
-/// Подбирает рабочую точку подключения и запускает туннель.
-pub async fn start(acc: &Account, junk: bool, log: impl Fn(String)) -> Result<Arc<Tunnel>, String> {
-    let mut candidates: Vec<String> = vec![acc.endpoint.clone()];
-    candidates.extend(ENDPOINTS.iter().map(|s| s.to_string()));
-    candidates.dedup();
-    let mut last = String::new();
-    for ep in candidates {
-        let Some(addr) = tokio::net::lookup_host(&ep).await.ok().and_then(|mut a| a.find(|x| x.is_ipv4())) else { continue };
-        match handshake(acc, addr, junk, Duration::from_secs(4)).await {
-            Ok((udp, wg)) => {
-                log(format!("WARP подключён через {addr}"));
-                return Ok(run(acc, udp, wg, addr));
+/// Локальный адрес сокета. В живых тестах его можно задать (Z2_BIND), чтобы проверить
+/// путь через конкретный адаптер, например мимо VPN.
+fn bind_ip() -> Ipv4Addr {
+    #[cfg(test)]
+    if let Some(ip) = std::env::var("Z2_BIND").ok().and_then(|v| v.parse().ok()) {
+        return ip;
+    }
+    Ipv4Addr::UNSPECIFIED
+}
+
+const HANDSHAKE_LIMIT: Duration = Duration::from_secs(2);
+/// Сколько точек пробовать при подборе (самые надёжные идут первыми).
+const PROBE_ENDPOINTS: usize = 5;
+
+/// Подключение по способу и проверка, что через туннель реально идут данные.
+async fn try_route(acc: &Account, addr: SocketAddr, route: &Route, opts: &Options) -> Result<Arc<Tunnel>, String> {
+    let (udp, wg) = handshake(acc, addr, route.mask, opts.quic.clone(), HANDSHAKE_LIMIT).await?;
+    let t = run(acc, udp, wg, addr);
+    probe(&t).await?;
+    Ok(t)
+}
+
+/// Подбирает способ подключения и запускает туннель.
+///
+/// Сначала пробуется способ, сработавший в прошлый раз, затем по очереди сочетания
+/// «точка × маскировка». Каждое проверяется настоящей загрузкой через туннель: так
+/// ловится блокировка, при которой рукопожатие проходит, а данные обрываются.
+pub async fn start(acc: &Account, opts: &Options, log: impl Fn(String)) -> Result<(Arc<Tunnel>, Route), String> {
+    let resolve = |ep: String| async move { tokio::net::lookup_host(&ep).await.ok().and_then(|mut a| a.find(|x| x.is_ipv4())) };
+
+    if let Some(pref) = &opts.preferred {
+        if opts.auto || pref.mask == Mask::Plain {
+            if let Some(addr) = resolve(pref.endpoint.clone()).await {
+                if let Ok(t) = try_route(acc, addr, pref, opts).await {
+                    log(format!("WARP подключён через {} ({})", pref.endpoint, mask_name(pref.mask)));
+                    return Ok((t, pref.clone()));
+                }
             }
-            Err(e) => last = e,
         }
     }
-    Err(format!("Не удалось подключиться к WARP ни через одну точку ({last}). Возможно, WARP блокируется у вашего провайдера"))
+
+    let mut endpoints: Vec<String> = ENDPOINTS.iter().take(PROBE_ENDPOINTS).map(|s| s.to_string()).collect();
+    if !endpoints.contains(&acc.endpoint) {
+        endpoints.push(acc.endpoint.clone());
+    }
+    let masks: Vec<Mask> = if opts.auto {
+        // Случайные пакеты первыми: проверено через провайдера в РФ, остальное — запасные варианты.
+        // Неудачные попытки провайдер наказывает временной блокировкой, поэтому порядок важен.
+        [Mask::Junk, Mask::Dns, Mask::Quic, Mask::Plain].into_iter().filter(|m| *m != Mask::Quic || opts.quic.is_some()).collect()
+    } else {
+        vec![Mask::Plain]
+    };
+
+    // По очереди: одновременные рукопожатия с одним ключом сервер отбрасывает
+    // (защита WireGuard от повторов принимает только самое свежее).
+    let mut last = String::new();
+    let mut answered = false;
+    for ep in &endpoints {
+        let Some(addr) = resolve(ep.clone()).await else { continue };
+        for &mask in &masks {
+            let route = Route { endpoint: ep.clone(), mask };
+            let (udp, wg) = match handshake(acc, addr, mask, opts.quic.clone(), HANDSHAKE_LIMIT).await {
+                Ok(x) => x,
+                Err(e) => {
+                    last = e;
+                    continue;
+                }
+            };
+            answered = true;
+            let t = run(acc, udp, wg, addr);
+            match probe(&t).await {
+                Ok(()) => {
+                    log(format!("WARP подключён через {} ({})", route.endpoint, mask_name(route.mask)));
+                    return Ok((t, route));
+                }
+                Err(e) => last = e,
+            }
+        }
+    }
+    if !answered {
+        return Err("Не удалось подключиться к WARP ни через одну точку: провайдер не пропускает рукопожатие. Включите обход (сферу на главной): через него WARP маскируется лучше".into());
+    }
+    Err(format!("WARP отвечает, но провайдер обрывает передачу данных ({last}). Включите обход (сферу на главной): через него WARP маскируется лучше"))
+}
+
+/// Название маскировки для журнала.
+pub fn mask_name(m: Mask) -> &'static str {
+    match m {
+        Mask::Dns => "маскировка под DNS",
+        Mask::Quic => "маскировка под QUIC",
+        Mask::Junk => "случайные пакеты",
+        Mask::Plain => "без маскировки",
+    }
+}
+
+/// Проверка туннеля: 64 КБ с speed.cloudflare.com. Блокировки WARP часто пропускают
+/// рукопожатие и первые килобайты, а дальше обрывают соединение.
+pub async fn probe(t: &Arc<Tunnel>) -> Result<(), String> {
+    const BYTES: usize = 65_536;
+    let ip = tokio::net::lookup_host("speed.cloudflare.com:80")
+        .await
+        .map_err(|e| e.to_string())?
+        .find_map(|a| match a {
+            SocketAddr::V4(v) => Some(v),
+            _ => None,
+        })
+        .ok_or("speed.cloudflare.com: адрес не найден")?;
+    let check = async {
+        let mut c = t.connect(ip).await?;
+        let req = format!("GET /__down?bytes={BYTES} HTTP/1.1\r\nHost: speed.cloudflare.com\r\nConnection: close\r\n\r\n");
+        c.tx.send(req.into_bytes()).await.map_err(|_| "Туннель WARP остановлен".to_string())?;
+        t.wake().notify_one();
+        let mut got = 0usize;
+        while let Some(chunk) = c.rx.recv().await {
+            got += chunk.len();
+            if got > BYTES {
+                return Ok(());
+            }
+        }
+        Err(format!("получено только {} КБ", got / 1024))
+    };
+    tokio::time::timeout(Duration::from_secs(12), check).await.map_err(|_| "таймаут загрузки через WARP".to_string())?
 }
 
 // ---------------------------------------------------------------- основной цикл
@@ -479,6 +648,41 @@ async fn stack_loop(udp: UdpSocket, mut wg: Wg, local: Ipv4Addr, mut cmd_rx: mps
                 let mut p = p.to_vec();
                 send_wg(&udp, &wg, &mut p, &stats).await;
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dns_query_is_valid() {
+        let q = dns_query();
+        assert_eq!(&q[2..6], &[0x01, 0x00, 0, 1]);
+        assert!(q.ends_with(&[0, 0, 1, 0, 1]));
+    }
+
+    /// Каждая маскировка отдельно: cargo test --lib live_masks -- --ignored --nocapture
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore]
+    async fn live_masks() {
+        let acc = super::super::api::register().await.unwrap();
+        let quic = std::env::var("LOCALAPPDATA").ok().and_then(|d| std::fs::read(std::path::Path::new(&d).join("Zapret2GUI/engine/fake/quic_initial_www_google_com.bin")).ok()).map(Arc::new);
+        let only = std::env::var("Z2_EP").ok();
+        for ep in ENDPOINTS.iter().filter(|e| only.as_deref().map(|o| o == **e).unwrap_or(true)) {
+        let addr = tokio::net::lookup_host(*ep).await.unwrap().find(|a| a.is_ipv4()).unwrap();
+        println!("--- {ep}");
+        for mask in [Mask::Dns, Mask::Quic, Mask::Junk, Mask::Plain] {
+            let r = match handshake(&acc, addr, mask, quic.clone(), Duration::from_secs(3)).await {
+                Ok((udp, wg)) => match probe(&run(&acc, udp, wg, addr)).await {
+                    Ok(()) => "рукопожатие и данные: да".to_string(),
+                    Err(e) => format!("рукопожатие: да, данные: нет ({e})"),
+                },
+                Err(e) => format!("рукопожатие: нет ({e})"),
+            };
+            println!("{}: {r}", mask_name(mask));
+        }
         }
     }
 }
