@@ -3,3 +3,6 @@ contact_links:
   - name: Документация zapret2
     url: https://github.com/bol-van/zapret2/blob/master/docs/manual.md
     about: Синтаксис стратегий и параметры winws2
+  - name: Telegram-канал @raygit
+    url: https://t.me/raygit
+    about: Новости, анонсы версий и вопросы по программе

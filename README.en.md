@@ -13,6 +13,7 @@
 [![Downloads](https://img.shields.io/github/downloads/raiyaxkrash/zapret2-rust/total?style=flat-square&color=0a0a0a)](https://github.com/raiyaxkrash/zapret2-rust/tree/stats)
 [![Build](https://img.shields.io/github/actions/workflow/status/raiyaxkrash/zapret2-rust/release.yml?style=flat-square&label=build)](https://github.com/raiyaxkrash/zapret2-rust/actions)
 [![Stars](https://img.shields.io/github/stars/raiyaxkrash/zapret2-rust?style=flat-square&color=555555)](https://github.com/raiyaxkrash/zapret2-rust/stargazers)
+[![Telegram](https://img.shields.io/badge/Telegram-@raygit-26A5E4?style=flat-square&logo=telegram&logoColor=white)](https://t.me/raygit)
 
 **[Features](#features)** · **[Comparison](#how-it-compares)** · **[Installation](#installation)** · **[FAQ](#faq)** · **[Русский](README.md)**
 
@@ -206,7 +207,7 @@ New users see the simple mode: Home, site packs, Telegram, WARP and Diagnostics.
 zapret2 intercepts network packets through the WinDivert driver, and only an administrator can load drivers in Windows. Autostart uses Task Scheduler, so there's no UAC prompt at every sign-in.
 </details>
 
-Didn't find an answer? [Open an issue](https://github.com/raiyaxkrash/zapret2-rust/issues/new/choose) and attach the diagnostics report.
+Didn't find an answer? [Open an issue](https://github.com/raiyaxkrash/zapret2-rust/issues/new/choose) and attach the diagnostics report. News and release announcements are posted in the Telegram channel [@raygit](https://t.me/raygit).
 
 ## Credits
 

@@ -13,6 +13,7 @@
 [![Скачивания](https://img.shields.io/github/downloads/raiyaxkrash/zapret2-rust/total?style=flat-square&label=%D1%81%D0%BA%D0%B0%D1%87%D0%B8%D0%B2%D0%B0%D0%BD%D0%B8%D0%B9&color=0a0a0a)](https://github.com/raiyaxkrash/zapret2-rust/tree/stats)
 [![Сборка](https://img.shields.io/github/actions/workflow/status/raiyaxkrash/zapret2-rust/release.yml?style=flat-square&label=%D1%81%D0%B1%D0%BE%D1%80%D0%BA%D0%B0)](https://github.com/raiyaxkrash/zapret2-rust/actions)
 [![Звёзды](https://img.shields.io/github/stars/raiyaxkrash/zapret2-rust?style=flat-square&label=%D0%B7%D0%B2%D1%91%D0%B7%D0%B4%D1%8B&color=555555)](https://github.com/raiyaxkrash/zapret2-rust/stargazers)
+[![Telegram](https://img.shields.io/badge/Telegram-@raygit-26A5E4?style=flat-square&logo=telegram&logoColor=white)](https://t.me/raygit)
 
 **[Возможности](#что-умеет)** · **[Сравнение](#чем-отличается)** · **[Установка](#установка)** · **[Вопросы](#вопросы-и-ответы)** · **[English](README.en.md)**
 
@@ -244,7 +245,7 @@ zapret2 перехватывает сетевые пакеты через дра
 Настройки и списки лежат в `%LOCALAPPDATA%\Zapret2GUI` (Настройки → «Папка с данными»). Удаляется программа через «Параметры Windows» → «Приложения», вместе с заданием автозапуска.
 </details>
 
-Не нашли ответа? [Создайте issue](https://github.com/raiyaxkrash/zapret2-rust/issues/new/choose) и приложите отчёт диагностики.
+Не нашли ответа? [Создайте issue](https://github.com/raiyaxkrash/zapret2-rust/issues/new/choose) и приложите отчёт диагностики или напишите в Telegram-канал [@raygit](https://t.me/raygit) — там же новости и анонсы новых версий.
 
 ## Помочь проекту
 

@@ -356,6 +356,8 @@ const I18N = (() => {
     ["Заново выбрать, что не открывается, и подобрать стратегию", "Choose again what doesn't open and find a strategy"],
     ["Открыть", "Open"],
     ["Папка с данными", "Data folder"],
+    ["Telegram-канал", "Telegram channel"],
+    ["Новости, новые версии и ответы на вопросы — t.me/raygit", "News, new releases and answers to questions — t.me/raygit"],
     ["Zapret2 GUI использует", "Zapret2 GUI uses"],
     ["(bol-van, MIT), драйвер WinDivert. Прокси для Telegram — собственная реализация протокола",
       "(bol-van, MIT) and the WinDivert driver. The Telegram proxy is an independent implementation of the protocol from"],
