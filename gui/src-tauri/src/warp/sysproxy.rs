@@ -5,25 +5,18 @@
 
 use std::{fs, path::Path};
 
-use windows_sys::Win32::Networking::WinInet::{InternetSetOptionW, INTERNET_OPTION_REFRESH, INTERNET_OPTION_SETTINGS_CHANGED};
+use windows_sys::Win32::Networking::WinInet::{
+    InternetSetOptionW, INTERNET_OPTION_REFRESH, INTERNET_OPTION_SETTINGS_CHANGED,
+};
 
-use crate::util::hidden_command;
+use crate::util::winreg;
 
-const KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings";
+const SUBKEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings";
 const VALUE: &str = "AutoConfigURL";
 
-/// Текущий адрес PAC в настройках Windows.
+/// Текущий адрес PAC в настройках Windows (напрямую через WinAPI без запуска reg.exe).
 pub fn current() -> Option<String> {
-    let out = hidden_command("reg").args(["query", KEY, "/v", VALUE]).output().ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let text = String::from_utf8_lossy(&out.stdout).to_string();
-    text.lines()
-        .find(|l| l.trim_start().starts_with(VALUE))
-        .and_then(|l| l.split("REG_SZ").nth(1))
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())
+    winreg::get_sz(winreg::HKCU, SUBKEY, VALUE).map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
 }
 
 /// Наш ли это PAC (по адресу локального прокси).
@@ -39,13 +32,8 @@ fn notify() {
 }
 
 pub fn set(url: &str) -> Result<(), String> {
-    let out = hidden_command("reg")
-        .args(["add", KEY, "/v", VALUE, "/t", "REG_SZ", "/d", url, "/f"])
-        .output()
-        .map_err(|e| e.to_string())?;
-    if !out.status.success() {
-        return Err("Не удалось включить системный прокси для WARP".into());
-    }
+    winreg::set_sz(winreg::HKCU, SUBKEY, VALUE, url)
+        .map_err(|_| "Не удалось включить системный прокси для WARP".to_string())?;
     notify();
     Ok(())
 }
@@ -80,10 +68,10 @@ pub fn disable(root: &Path) {
 pub fn restore(previous: Option<&str>) {
     match previous.filter(|p| !is_ours(p)) {
         Some(p) => {
-            let _ = hidden_command("reg").args(["add", KEY, "/v", VALUE, "/t", "REG_SZ", "/d", p, "/f"]).output();
+            let _ = winreg::set_sz(winreg::HKCU, SUBKEY, VALUE, p);
         }
         None => {
-            let _ = hidden_command("reg").args(["delete", KEY, "/v", VALUE, "/f"]).output();
+            winreg::delete_value(winreg::HKCU, SUBKEY, VALUE);
         }
     }
     notify();

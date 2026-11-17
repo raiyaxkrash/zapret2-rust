@@ -37,9 +37,17 @@ jobs:
         with:
           workspaces: gui/src-tauri
 
+      - name: Clippy lints
+        working-directory: gui/src-tauri
+        run: cargo clippy --lib --tests -- -D warnings
+
       - name: Unit tests
         working-directory: gui/src-tauri
         run: cargo test --lib
+
+      - name: Verify English translations
+        working-directory: gui
+        run: node scripts/check-i18n.mjs
 
       - name: Install Tauri CLI
         working-directory: gui

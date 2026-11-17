@@ -235,10 +235,10 @@ pub fn build_args(settings: &Settings, presets: &Presets, strategy: &Strategy, y
         match settings.custom_mode.as_str() {
             "all" => {
                 tcp_ports.push(YT_TCP);
-                profiles.push(tcp_profile(strategy, YT_TCP, &[exclude.clone()]));
+                profiles.push(tcp_profile(strategy, YT_TCP, std::slice::from_ref(&exclude)));
                 if settings.quic {
                     need_quic = true;
-                    profiles.push(quic_profile(strategy, &[exclude]));
+                    profiles.push(quic_profile(strategy, std::slice::from_ref(&exclude)));
                 }
             }
             "auto" => {
@@ -253,13 +253,14 @@ pub fn build_args(settings: &Settings, presets: &Presets, strategy: &Strategy, y
                     ],
                 ));
                 // Для QUIC автосписок только читается (писать его может лишь один профиль).
-                if settings.quic && (user_count > 0 || count_domains(&auto) > 0) {
+                if user_count > 0 || count_domains(&auto) > 0 {
                     need_quic = true;
-                    profiles.push(quic_profile(strategy, &[
+                    let qf = [
                         "--hostlist=lists/user.txt".to_string(),
                         format!("--hostlist={auto_arg}"),
                         exclude,
-                    ]));
+                    ];
+                    profiles.push(if settings.quic { quic_profile(strategy, &qf) } else { quic_block(&qf) });
                 }
             }
             _ => {
@@ -268,10 +269,8 @@ pub fn build_args(settings: &Settings, presets: &Presets, strategy: &Strategy, y
                     let f = vec!["--hostlist=lists/user.txt".to_string(), exclude];
                     tcp_ports.push(YT_TCP);
                     profiles.push(tcp_profile(strategy, YT_TCP, &f));
-                    if settings.quic {
-                        need_quic = true;
-                        profiles.push(quic_profile(strategy, &f));
-                    }
+                    need_quic = true;
+                    profiles.push(if settings.quic { quic_profile(strategy, &f) } else { quic_block(&f) });
                 }
             }
         }
@@ -367,6 +366,7 @@ mod tests {
             resources: PathBuf::from("."),
             remote: root.join("remote"),
             root,
+            portable: false,
         };
         let presets = Presets {
             quic_default: vec!["--lua-desync=quic_default".into()],
@@ -474,6 +474,12 @@ mod tests {
         let args = build_args(&settings, &presets, &s("main"), &s("main"), &paths).unwrap();
         assert!(args.contains(&"--hostlist=lists/user.txt".into()));
         assert!(args.contains(&"--hostlist-exclude=lists/exclude.txt".into()));
+
+        // При выключенном QUIC он блокируется и для «Моих сайтов», чтобы браузер ушёл на TCP.
+        let off = build_args(&Settings { quic: false, ..settings }, &presets, &s("main"), &s("main"), &paths).unwrap();
+        let quic: Vec<_> = profiles(&off).into_iter().filter(|p| p[0] == "--filter-udp=443").collect();
+        assert_eq!(quic.len(), 1);
+        assert_eq!(quic[0].last(), Some(&"--lua-desync=drop".to_string()));
     }
 
     #[test]

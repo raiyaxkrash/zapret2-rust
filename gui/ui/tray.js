@@ -25,9 +25,13 @@ function render() {
   p.classList.toggle("on", running && !busy);
   p.classList.toggle("busy", busy || st.testing);
   $("#state").textContent = st.testing ? "Подбор стратегии…" : busy ? (running ? "Выключение…" : "Запуск…") : running ? "Обход включён" : "Обход выключен";
+  const extra = [
+    st.warp?.connected ? "WARP" : "",
+    st.tg_proxy?.running ? "Telegram" : "",
+  ].filter(Boolean).join(" · ");
   $("#sub").textContent = running && st.status.since
-    ? `Работает ${fmtUptime(Math.max(0, Math.floor(Date.now() / 1000) - st.status.since))}`
-    : "Нажмите, чтобы включить";
+    ? `Работает ${fmtUptime(Math.max(0, Math.floor(Date.now() / 1000) - st.status.since))}${extra ? ` · ${extra}` : ""}`
+    : extra ? `Активно: ${extra}` : "Нажмите, чтобы включить";
 
   const sel = $("#strategy");
   if (sel.options.length !== strategies.length) {
@@ -53,8 +57,9 @@ function render() {
 
 async function save(patch) {
   const running = st.status.running;
+  const affectsEngine = !("tg_proxy" in patch && Object.keys(patch).length === 1);
   st.settings = { ...st.settings, ...patch };
-  if (running) busy = true;
+  if (running && affectsEngine) busy = true;
   render();
   try { st.settings = await invoke("save_settings", { new: st.settings }); }
   catch (e) { showError(e); }
@@ -92,6 +97,8 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") invoke("hi
 
 listen("flyout-shown", refresh);
 listen("engine-state", () => { if (!busy) refresh(); });
+listen("warp-state", () => { if (!busy) refresh(); });
+listen("tg-proxy-state", () => { if (!busy) refresh(); });
 listen("settings-changed", ({ payload }) => { if (st) { st.settings = payload; applyAppearance(payload.theme, null, payload.animations); I18N.sync(payload.lang, st.platform?.lang); render(); } });
 listen("content-updated", async () => { strategies = await invoke("get_strategies"); render(); });
 everyWhileVisible(1000, render);

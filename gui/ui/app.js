@@ -49,7 +49,7 @@ function goto(page) {
   $(".content").scrollTop = 0;
   if (page === "strategies") { loadCommandLine(); loadIsp(); loadNetHistory(); }
   if (page === "settings") loadOthers();
-  if (page === "warp") loadWarpPacks();
+  if (page === "warp") { loadWarpPacks(); loadRunningApps(); }
   if (page === "lists") loadList(currentList);
   if (page === "logs") scrollLog();
 }
@@ -146,7 +146,7 @@ function render() {
   $("#engVer").textContent = state.engine_version || "—";
   $("#appVer").textContent = state.app_version;
   $("#contentVer").textContent = state.content_version || "—";
-  $("#dataDir").textContent = state.data_dir;
+  $("#dataDir").textContent = state.portable ? `${state.data_dir} · портативный режим` : state.data_dir;
   if (document.activeElement !== $("#updateUrl")) $("#updateUrl").value = s.app_update_url || "";
 
   if (document.activeElement !== $("#tgPort")) $("#tgPort").value = s.tg_proxy_port || 1443;
@@ -344,19 +344,38 @@ function renderPacks() {
   const enabled = packs.filter((p) => on.has(p.id)).length;
   $("#packsCount").textContent = enabled ? ` · включено ${enabled}` : "";
   box.innerHTML = packs.map((p) => `
-    <button class="pack ${on.has(p.id) ? "on" : ""}" data-id="${esc(p.id)}" title="${esc(p.description)}">
+    <div class="pack ${on.has(p.id) ? "on" : ""}" data-id="${esc(p.id)}" role="button" tabindex="0" title="${esc(p.description)}">
       <div class="pack-top"><span class="pack-ico">${icon(p.icon || "globe")}</span><span class="pack-check">${icon("tick")}</span></div>
       <div class="pack-name">${esc(p.name)}</div>
       <div class="pack-desc">${esc(p.description)}</div>
-      <div class="pack-count">${p.kind === "ipset" ? `${p.domains.toLocaleString(I18N.locale)} ${plural(p.domains, "подсеть", "подсети", "подсетей")}` : `${p.domains} ${plural(p.domains, "домен", "домена", "доменов")}`}</div>
-    </button>`).join("");
-  $$(".pack", box).forEach((b) => b.addEventListener("click", () => {
+      <div class="pack-foot">
+        <span class="pack-count">${p.kind === "ipset" ? `${p.domains.toLocaleString(I18N.locale)} ${plural(p.domains, "подсеть", "подсети", "подсетей")}` : `${p.domains} ${plural(p.domains, "домен", "домена", "доменов")}`}</span>
+        ${p.kind === "ipset" ? "" : `<button class="pack-peek" type="button" data-peek="${esc(p.id)}">Состав</button>`}
+      </div>
+    </div>`).join("");
+  const togglePack = (el) => {
     const set = new Set(state.settings.packs || []);
-    set.has(b.dataset.id) ? set.delete(b.dataset.id) : set.add(b.dataset.id);
-    b.classList.toggle("on");
+    set.has(el.dataset.id) ? set.delete(el.dataset.id) : set.add(el.dataset.id);
+    el.classList.toggle("on");
     // Сразу обновляем состояние, чтобы быстрые повторные нажатия не теряли выбор.
     state.settings.packs = [...set];
     saveSettings({ packs: state.settings.packs });
+  };
+  $$(".pack", box).forEach((b) => {
+    b.addEventListener("click", (ev) => {
+      if (ev.target.closest("[data-peek]")) return;
+      togglePack(b);
+    });
+    b.addEventListener("keydown", (ev) => {
+      if ((ev.key === "Enter" || ev.key === " ") && !ev.target.closest("[data-peek]")) {
+        ev.preventDefault();
+        togglePack(b);
+      }
+    });
+  });
+  $$("[data-peek]", box).forEach((btn) => btn.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    loadList(`pack:${btn.dataset.peek}`).then(() => $("#listEditor")?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
   }));
 }
 
@@ -410,7 +429,10 @@ $("#siteCheck").addEventListener("submit", (e) => {
 });
 
 /* ===================================================================== быстрое добавление сайта */
-$$(".add-site:not(.site-check)").forEach((form) => form.addEventListener("submit", async (e) => {
+$$(".add-site input").forEach((inp) => inp.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); inp.form?.requestSubmit(); }
+}));
+$$(".add-site:not(.site-check):not(.add-warp-site):not(.add-warp-exe)").forEach((form) => form.addEventListener("submit", async (e) => {
   e.preventDefault();
   const input = $("input", form);
   const value = input.value.trim();
@@ -510,23 +532,39 @@ $("#copyCmd").addEventListener("click", () => navigator.clipboard.writeText($("#
 
 /* ---------- автоподбор */
 let testRows = [];
+const expandedTestRows = new Set();
 function renderTestRows(runningIndex = -1) {
-  $("#testRows").innerHTML = testRows.map((row, i) => {
+  const box = $("#testRows");
+  box.innerHTML = testRows.map((row, i) => {
     const r = row.result;
     const running = i === runningIndex && !r;
     const err = r?.error ? `<span class="err">${esc(r.error.split("\n")[0])}</span>` : "";
-    return `<div class="test-row ${running ? "running" : ""}">
+    const checks = r?.checks || [];
+    const canExpand = checks.length > 0;
+    const details = canExpand ? `<div class="test-checks">${checks.map((c) => {
+      const host = c.url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+      const meta = c.ok ? `${c.ms} мс` : (c.error || "не открывается");
+      return `<div class="test-check-line ${c.ok ? "good" : "bad"}"><span class="dot"></span><span class="url" data-no-i18n>${esc(host)}</span><span class="c-meta">${esc(meta)}</span></div>`;
+    }).join("")}</div>` : "";
+    return `<div class="test-row ${running ? "running" : ""} ${canExpand ? "expandable" : ""} ${expandedTestRows.has(row.id) ? "open" : ""}" data-row-id="${esc(row.id)}">
       <div>${esc(row.name)}${err}</div>
       <div>${running ? `<span class="badge">проверка…</span>` : r ? badgeFor(r) : `<span class="badge">ожидание</span>`}</div>
       <div class="ms">${r && r.ok ? r.avg_ms + " мс" : ""}</div>
+      ${details}
     </div>`;
   }).join("");
+  $$(".test-row.expandable", box).forEach((el) => el.addEventListener("click", () => {
+    const id = el.dataset.rowId;
+    expandedTestRows.has(id) ? expandedTestRows.delete(id) : expandedTestRows.add(id);
+    el.classList.toggle("open");
+  }));
 }
 
 /** Подбор стратегии; `site` — проверить только этот сайт. */
 async function runTest(site = null) {
   if (testing) return;
   testing = true;
+  expandedTestRows.clear();
   testRows = [{ id: "baseline", name: "Без обхода", result: null }, ...strategies.map((s) => ({ id: s.id, name: s.name, result: null }))];
   $("#testPanel").hidden = false;
   $("#testFoot").hidden = true;
@@ -563,7 +601,7 @@ function finishSiteTest(r) {
   let msg;
   if (r.baseline.ok > 0) msg = `${r.site} открывается и без обхода: блокировки нет или она частичная.`;
   else if (working.length) msg = `${r.site} открывается со стратегиями: ${working.map((x) => `«${x.name}»`).join(", ")}.`;
-  else msg = `${r.site} не открылся ни с одной стратегией. Возможно, сайт заблокирован по IP или сейчас не работает.`;
+  else msg = `${r.site} не открылся ни с одной стратегией. Возможно, сайт заблокирован по IP — попробуйте пустить его через WARP.`;
   const current = working.some((x) => x.id === state.settings.strategy);
   const best = r.results.find((x) => x.id === r.best);
   const foot = $("#testFoot");
@@ -571,10 +609,16 @@ function finishSiteTest(r) {
   const hint = working.length && !current
     ? (working.length > 1 && best ? `Текущая стратегия для него не подходит, быстрее всех «${best.name}».` : "Текущая стратегия для него не подходит.")
     : "";
-  foot.innerHTML = `<div>${esc(msg)}${hint ? `<br>${esc(hint)}` : ""}</div>`
-    + (working.length ? `<button class="btn primary" id="addCheckedSite">Добавить в «Мои сайты»</button>` : "");
+  const actionBtn = working.length
+    ? `<button class="btn primary" id="addCheckedSite">Добавить в «Мои сайты»</button>`
+    : (!r.baseline.ok && !r.cancelled ? `<button class="btn primary" id="routeSiteWarp">Пустить через WARP</button>` : "");
+  foot.innerHTML = `<div>${esc(msg)}${hint ? `<br>${esc(hint)}` : ""}</div>${actionBtn}`;
   $("#addCheckedSite")?.addEventListener("click", async () => {
     try { toast(await invoke("add_domain", { input: r.site, list: "user" })); $("#addCheckedSite")?.remove(); refresh(); }
+    catch (e) { toast(errText(e), "err"); }
+  });
+  $("#routeSiteWarp")?.addEventListener("click", async () => {
+    try { toast(await invoke("add_warp_domain", { input: r.site })); $("#routeSiteWarp")?.remove(); refresh(); }
     catch (e) { toast(errText(e), "err"); }
   });
 }
@@ -600,6 +644,9 @@ function finishTest() {
     }
     if (bestYt) lines.push(`YouTube: «${bestYt.name}» — ${bestYt.yt_ok} из ${bestYt.yt_total}.`);
     else if (base.yt_total) lines.push("Для YouTube ни одна стратегия не сработала. Попробуйте выключить QUIC и повторить подбор.");
+    if (report.recommend_quic_off && state.settings.quic) {
+      lines.push("Для YouTube лучше выключить QUIC — настройка будет применена автоматически.");
+    }
     if (!best && !bestYt) lines.push("Ни одна стратегия не помогла. Попробуйте выключить QUIC, проверить антивирус или задать свои параметры.");
   }
 
@@ -611,6 +658,7 @@ function finishTest() {
     const yt = bestYt.id === main ? "" : bestYt.id;
     if (yt !== (state.settings.youtube_strategy || "")) patch.youtube_strategy = yt;
   }
+  if (report.recommend_quic_off && state.settings.quic) patch.quic = false;
   const foot = $("#testFoot");
   foot.hidden = false;
   const canShare = !report.site && !report.cancelled && (best || bestYt);
@@ -664,9 +712,40 @@ function drawTraffic() {
   $("#trafRxLine").setAttribute("d", rxPath);
   $("#trafTxLine").setAttribute("d", smoothPath(tx));
   $("#trafFill").setAttribute("d", rx.length ? `${rxPath} L${W} ${H} L${rx[0][0].toFixed(1)} ${H} Z` : "");
+  if (trafHoverIdx == null) {
+    $("#trafRx").textContent = trafRx.length ? fmtRate(trafRx[trafRx.length - 1]) : "—";
+    $("#trafTx").textContent = trafTx.length ? fmtRate(trafTx[trafTx.length - 1]) : "—";
+  }
+}
+
+let trafHoverIdx = null;
+$("#trafChart")?.addEventListener("mousemove", (ev) => {
+  if (trafRx.length < 2) return;
+  const rect = ev.currentTarget.getBoundingClientRect();
+  const ratio = Math.max(0, Math.min(1, (ev.clientX - rect.left) / Math.max(1, rect.width)));
+  const startSlot = TRAFFIC_POINTS - trafRx.length;
+  const slot = Math.round(ratio * (TRAFFIC_POINTS - 1));
+  const idx = slot - startSlot;
+  if (idx < 0 || idx >= trafRx.length) {
+    $("#trafCursor").setAttribute("hidden", "");
+    trafHoverIdx = null;
+    return;
+  }
+  trafHoverIdx = idx;
+  const x = ((startSlot + idx) / (TRAFFIC_POINTS - 1)) * 600;
+  const cur = $("#trafCursor");
+  cur.setAttribute("x1", x.toFixed(1));
+  cur.setAttribute("x2", x.toFixed(1));
+  cur.removeAttribute("hidden");
+  $("#trafRx").textContent = fmtRate(trafRx[idx]);
+  $("#trafTx").textContent = fmtRate(trafTx[idx]);
+});
+$("#trafChart")?.addEventListener("mouseleave", () => {
+  trafHoverIdx = null;
+  $("#trafCursor")?.setAttribute("hidden", "");
   $("#trafRx").textContent = trafRx.length ? fmtRate(trafRx[trafRx.length - 1]) : "—";
   $("#trafTx").textContent = trafTx.length ? fmtRate(trafTx[trafTx.length - 1]) : "—";
-}
+});
 
 async function sampleTraffic() {
   let t;
@@ -783,6 +862,7 @@ async function runWizard() {
           const p = {};
           if (report.best) p.strategy = report.best;
           if (report.best_youtube) p.youtube_strategy = report.best_youtube === (p.strategy || state.settings.strategy) ? "" : report.best_youtube;
+          if (report.recommend_quic_off) p.quic = false;
           await saveSettings(p, { quiet: true });
           shared = true;
         }
@@ -826,6 +906,14 @@ async function loadWarpPacks() {
   try { warpPacks = await invoke("get_warp_packs"); } catch { warpPacks = []; }
   renderWarp();
 }
+async function loadRunningApps() {
+  const sel = $("#runningApps");
+  if (!sel) return;
+  try {
+    const apps = await invoke("get_running_apps");
+    sel.innerHTML = `<option value="">Из запущенных…</option>` + apps.map((a) => `<option value="${esc(a)}" data-no-i18n>${esc(a)}</option>`).join("");
+  } catch {}
+}
 function fmtBytes(n) {
   return n >= 1073741824 ? `${(n / 1073741824).toFixed(1)} ГБ` : n >= 1048576 ? `${(n / 1048576).toFixed(1)} МБ` : `${Math.round(n / 1024)} КБ`;
 }
@@ -836,6 +924,8 @@ function renderWarp() {
   const w = state.warp, s = state.settings, on = !!s.warp;
   const failed = on && !w.running && w.last_error;
   const connecting = on && !w.running && !w.last_error;
+  const exes = (s.warp_exes || []).length;
+  const exesMeta = exes ? `, ${exes} ${plural(exes, "программа", "программы", "программ")}` : "";
   $("#warpCard .setting").classList.toggle("checked", on);
   $("#warpActions").hidden = !on;
   $("#warpCheck").hidden = !w.running;
@@ -847,7 +937,7 @@ function renderWarp() {
   $("#warpHint").classList.toggle("err", !!failed);
   $("#warpDesc").textContent = !on ? "Выключен"
     : failed ? "Не подключён" : connecting ? "Подключение…"
-    : w.connected ? `Подключён через ${w.endpoint} · ${w.domains} ${plural(w.domains, "сайт", "сайта", "сайтов")}${w.apps ? " · браузеры и программы" : ""}` : "Переподключение…";
+    : w.connected ? `Подключён через ${w.endpoint} · ${w.domains} ${plural(w.domains, "сайт", "сайта", "сайтов")}${exesMeta}${w.apps ? " · браузеры и программы" : ""}` : "Переподключение…";
   $("#warpHomeDesc").textContent = !on ? "Туннель для заблокированных сайтов"
     : failed ? "Ошибка, подробнее в разделе WARP" : w.connected ? "Подключён" : "Подключение…";
 
@@ -874,20 +964,117 @@ function renderWarp() {
   }
   const ta = $("#warpCustom");
   if (document.activeElement !== ta && !ta.dataset.dirty) ta.value = (s.warp_custom || []).join("\n");
-  $("#warpCustomCount").textContent = `${(s.warp_custom || []).length} ${plural((s.warp_custom || []).length, "сайт", "сайта", "сайтов")}`;
+  updateWarpCustomCount();
+  const exeTa = $("#warpExes");
+  if (exeTa && document.activeElement !== exeTa && !exeTa.dataset.dirty) exeTa.value = (s.warp_exes || []).join("\n");
+  updateWarpExesCount();
   if (document.activeElement !== $("#warpPort")) $("#warpPort").value = s.warp_port || 40080;
+  if ($("#warpLicense") && document.activeElement !== $("#warpLicense")) $("#warpLicense").value = s.warp_license || "";
 }
-$("#warpCustom").addEventListener("input", (e) => { e.target.dataset.dirty = "1"; });
+function updateWarpCustomCount() {
+  const ta = $("#warpCustom");
+  const n = countDomains(ta.value);
+  $("#warpCustomCount").textContent = `${n} ${plural(n, "сайт", "сайта", "сайтов")}${ta.dataset.dirty ? " · есть несохранённые изменения" : ""}`;
+}
+function updateWarpExesCount() {
+  const ta = $("#warpExes");
+  if (!ta) return;
+  const n = countDomains(ta.value);
+  $("#warpExesCount").textContent = `${n} ${plural(n, "программа", "программы", "программ")}${ta.dataset.dirty ? " · есть несохранённые изменения" : ""}`;
+}
+$("#warpCustom").addEventListener("input", (e) => { e.target.dataset.dirty = "1"; updateWarpCustomCount(); });
 $("#warpCustomSave").addEventListener("click", async () => {
-  const list = $("#warpCustom").value.split(/\s+/).map((x) => x.trim()).filter(Boolean);
-  delete $("#warpCustom").dataset.dirty;
+  const list = $("#warpCustom").value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
   await saveSettings({ warp_custom: list }, { quiet: true });
+  delete $("#warpCustom").dataset.dirty;
+  $("#warpCustom").value = (state.settings.warp_custom || []).join("\n");
+  updateWarpCustomCount();
   toast("Сайты для WARP сохранены");
+});
+$("#addWarpSite").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const input = $("#addWarpSite input");
+  const val = input.value.trim();
+  if (!val) return;
+  const btn = $("#addWarpSite button");
+  btn.disabled = true;
+  try {
+    const msg = await invoke("add_warp_domain", { input: val });
+    toast(msg);
+    input.value = "";
+    delete $("#warpCustom").dataset.dirty;
+    await refresh();
+  } catch (err) {
+    toast(errText(err), "err");
+  } finally {
+    btn.disabled = false;
+  }
+});
+$("#warpExes")?.addEventListener("input", (e) => { e.target.dataset.dirty = "1"; updateWarpExesCount(); });
+$("#warpExesSave")?.addEventListener("click", async () => {
+  const list = $("#warpExes").value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+  await saveSettings({ warp_exes: list }, { quiet: true });
+  delete $("#warpExes").dataset.dirty;
+  $("#warpExes").value = (state.settings.warp_exes || []).join("\n");
+  updateWarpExesCount();
+  toast("Программы для WARP сохранены");
+});
+$("#runningApps")?.addEventListener("focus", loadRunningApps);
+$("#runningApps")?.addEventListener("change", (e) => {
+  const v = e.target.value;
+  if (!v) return;
+  $("#warpExeInput").value = v;
+  e.target.value = "";
+  $("#addWarpExe")?.requestSubmit();
+});
+$("#addWarpExe")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const input = $("#warpExeInput");
+  const val = input.value.trim();
+  if (!val) return;
+  const btn = $("#addWarpExe button");
+  btn.disabled = true;
+  try {
+    const msg = await invoke("add_warp_exe", { input: val });
+    toast(msg);
+    input.value = "";
+    delete $("#warpExes").dataset.dirty;
+    await refresh();
+  } catch (err) {
+    toast(errText(err), "err");
+  } finally {
+    btn.disabled = false;
+  }
 });
 $("#saveWarpPort").addEventListener("click", () => {
   const port = parseInt($("#warpPort").value, 10);
   if (!(port >= 1024 && port <= 65535)) { toast("Порт должен быть числом от 1024 до 65535", "err"); return; }
-  saveSettings({ warp_port: port }, { quiet: true });
+  saveSettings({ warp_port: port }, { quiet: true }).then(() => { if (state.settings.warp_port === port) toast(`Порт сохранён: ${port}`); });
+});
+$("#saveWarpLicense")?.addEventListener("click", async () => {
+  const lic = $("#warpLicense").value.trim();
+  const btn = $("#saveWarpLicense");
+  btn.disabled = true;
+  try {
+    await saveSettings({ warp_license: lic }, { quiet: true });
+    if (state.settings.warp_license === lic) toast(lic ? "Ключ WARP+ применён" : "Ключ WARP+ очищен");
+  } finally {
+    btn.disabled = false;
+  }
+});
+$("#resetWarpAccount")?.addEventListener("click", async () => {
+  if (!confirm(I18N.t("Перевыпустить аккаунт WARP? Текущий ключ WireGuard будет заменён новым бесплатным ключом."))) return;
+  const btn = $("#resetWarpAccount");
+  btn.disabled = true;
+  try {
+    if (state.settings.warp_license) await saveSettings({ warp_license: "" }, { quiet: true });
+    toast(await invoke("warp_reset_account"));
+    await refresh();
+  } catch (e) {
+    toast(errText(e), "err", 9000);
+  } finally {
+    btn.disabled = false;
+  }
 });
 $("#warpCheck").addEventListener("click", async () => {
   const btn = $("#warpCheck");
@@ -915,6 +1102,13 @@ $("#warpRetry").addEventListener("click", async () => {
 listen("warp-state", () => { if (!busy) refresh(); });
 
 /* ===================================================================== диагностика */
+const DIAG_ACTIONS = {
+  start_engine: "Включить обход",
+  strategies: "Подобрать стратегию",
+  warp: "Открыть WARP",
+  kill_conflicts: "Отключить",
+  enable_doh: "Включить защиту DNS",
+};
 let diagReport = [];
 $("#diagRun").addEventListener("click", async () => {
   const btn = $("#diagRun");
@@ -924,12 +1118,24 @@ $("#diagRun").addEventListener("click", async () => {
   $("#diagList").innerHTML = `<div class="diag-row"><span class="dot" style="animation:blink 1s infinite"></span><div class="setting-desc">Идёт проверка…</div></div>`;
   try {
     diagReport = await invoke("run_diagnostics");
-    $("#diagList").innerHTML = diagReport.map((d) => `
-      <div class="diag-row ${d.status}"><span class="dot"></span><div>
+    $("#diagList").innerHTML = diagReport.map((d) => {
+      const actBtn = d.action && DIAG_ACTIONS[d.action]
+        ? `<button class="btn small" data-diag-act="${esc(d.action)}">${esc(DIAG_ACTIONS[d.action])}</button>`
+        : "";
+      return `<div class="diag-row ${d.status}"><span class="dot"></span><div>
         <div class="setting-title">${esc(d.title)}</div>
         <div class="setting-desc">${esc(d.detail)}</div>
         ${d.advice ? `<div class="diag-advice">${esc(d.advice)}</div>` : ""}
-      </div></div>`).join("");
+      </div>${actBtn}</div>`;
+    }).join("");
+    $$("[data-diag-act]", $("#diagList")).forEach((b) => b.addEventListener("click", async () => {
+      const act = b.dataset.diagAct;
+      if (act === "start_engine") { goto("home"); if (!state.status.running) togglePower(); }
+      else if (act === "strategies") { if (!state.settings.expert) await saveSettings({ expert: true }, { quiet: true }); goto("strategies"); runTest(); }
+      else if (act === "warp") goto("warp");
+      else if (act === "kill_conflicts") { await killConflicts(); $("#diagRun").click(); }
+      else if (act === "enable_doh") { await saveSettings({ dns_doh: true }, { quiet: true }); toast("Защита DNS (DoH) включена"); $("#diagRun").click(); }
+    }));
     $("#diagCopy").hidden = false;
   } catch (e) {
     $("#diagList").innerHTML = "";
@@ -1057,8 +1263,13 @@ async function loadList(name) {
   currentList = name;
   listDirty = false;
   $$("#listTabs .tab").forEach((t) => t.classList.toggle("active", t.dataset.list === name));
-  const info = LIST_INFO[name];
+  const isPack = name.startsWith("pack:");
+  const packObj = isPack ? packs.find((p) => p.id === name.slice(5)) : null;
+  const info = isPack
+    ? { hint: `Набор «${packObj?.name || name.slice(5)}»: встроенный список, обновляется с GitHub.`, editable: false }
+    : LIST_INFO[name] || LIST_INFO.user;
   $("#listHint").textContent = info.hint;
+  $("#listBackToUser").hidden = !isPack;
   $("#listEditor").readOnly = !info.editable;
   $("#listSave").hidden = !info.editable;
   $("#listClear").hidden = !info.clear;
@@ -1067,6 +1278,7 @@ async function loadList(name) {
   updateListCount();
 }
 
+$("#listBackToUser").addEventListener("click", () => loadList("user"));
 $$("#listTabs .tab").forEach((t) => t.addEventListener("click", () => loadList(t.dataset.list)));
 $("#listEditor").addEventListener("input", () => { listDirty = true; updateListCount(); });
 $("#listSave").addEventListener("click", async () => {
@@ -1075,6 +1287,7 @@ $("#listSave").addEventListener("click", async () => {
   try {
     await invoke("write_list", { name: currentList, content: $("#listEditor").value });
     listDirty = false;
+    $("#listEditor").value = await invoke("read_list", { name: currentList });
     toast(state?.status.running ? "Список сохранён, обход перезапущен" : "Список сохранён");
     updateListCount();
     refresh();
@@ -1091,20 +1304,59 @@ $("#openListsDir").addEventListener("click", () => invoke("open_folder", { which
 
 /* ===================================================================== logs */
 const MAX_LOG_LINES = 3000;
+let logSourceFilter = "all";
+let logQuery = "";
+
+function classifyLog(text) {
+  const low = text.toLowerCase();
+  const isErr = low.includes("error") || low.includes("ошибк") || low.includes("fail") || low.includes("не удал");
+  const src = text.startsWith("[app]") ? "app" : text.startsWith("[warp]") ? "warp" : text.startsWith("[tg]") ? "tg" : "winws";
+  return { src, isErr };
+}
+
+function matchesLogFilter(el) {
+  if (logSourceFilter === "err" && el.dataset.err !== "1") return false;
+  if (logSourceFilter !== "all" && logSourceFilter !== "err" && el.dataset.src !== logSourceFilter) return false;
+  if (logQuery && !el.textContent.toLowerCase().includes(logQuery)) return false;
+  return true;
+}
+
+function applyLogFilters() {
+  $$("#log > div").forEach((el) => { el.hidden = !matchesLogFilter(el); });
+  if ($("#autoScroll").checked) scrollLog();
+}
+
 function logLine(text, withTime = true) {
   const log = $("#log");
   const div = document.createElement("div");
-  const low = text.toLowerCase();
-  if (text.startsWith("[app]")) div.className = "l-app";
-  else if (low.includes("error") || low.includes("ошибк") || low.includes("fail")) div.className = "l-err";
+  const { src, isErr } = classifyLog(text);
+  div.dataset.src = src;
+  if (isErr) div.dataset.err = "1";
+  if (isErr) div.className = "l-err";
+  else if (src === "app") div.className = "l-app";
+  else if (src === "warp") div.className = "l-warp";
+  else if (src === "tg") div.className = "l-tg";
   const t = withTime ? `<span class="t">${new Date().toLocaleTimeString(I18N.locale)}</span> ` : "";
   div.innerHTML = t + esc(text);
+  div.hidden = !matchesLogFilter(div);
   log.appendChild(div);
   while (log.childElementCount > MAX_LOG_LINES) log.firstElementChild.remove();
-  if ($("#autoScroll").checked) scrollLog();
+  if (!div.hidden && $("#autoScroll").checked) scrollLog();
 }
 function scrollLog() { const l = $("#log"); l.scrollTop = l.scrollHeight; }
-$("#copyLogs").addEventListener("click", () => navigator.clipboard.writeText($("#log").innerText).then(() => toast("Журнал скопирован")));
+$$("#logFilter button").forEach((b) => b.addEventListener("click", () => {
+  logSourceFilter = b.dataset.filter;
+  $$("#logFilter button").forEach((x) => x.classList.toggle("active", x === b));
+  applyLogFilters();
+}));
+$("#logSearch")?.addEventListener("input", (e) => {
+  logQuery = e.target.value.trim().toLowerCase();
+  applyLogFilters();
+});
+$("#copyLogs").addEventListener("click", () => {
+  const visible = $$("#log > div:not([hidden])").map((d) => d.innerText).join("\n");
+  navigator.clipboard.writeText(visible).then(() => toast("Журнал скопирован"));
+});
 $("#clearLogs").addEventListener("click", async () => { await invoke("clear_logs"); $("#log").innerHTML = ""; });
 listen("log", ({ payload }) => logLine(payload));
 
@@ -1195,6 +1447,53 @@ $("#saveUpdateUrl").addEventListener("click", async () => {
 
 $("#openDataDir").addEventListener("click", () => invoke("open_folder", { which: "root" }));
 $$("[data-url]").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); invoke("open_url", { url: a.dataset.url }); }));
+
+/* Резервная копия настроек и списков */
+$("#exportBackup")?.addEventListener("click", async () => {
+  try { toast(await invoke("export_backup")); }
+  catch (e) { toast(errText(e), "err", 9000); }
+});
+$("#importBackup")?.addEventListener("click", () => $("#importBackupFile")?.click());
+$("#importBackupFile")?.addEventListener("change", async (e) => {
+  const file = e.target.files?.[0];
+  e.target.value = "";
+  if (!file) return;
+  try {
+    const json = await file.text();
+    const msg = await invoke("import_backup", { json });
+    toast(msg);
+    delete $("#warpCustom").dataset.dirty;
+    if ($("#warpExes")) delete $("#warpExes").dataset.dirty;
+    listDirty = false;
+    await refresh();
+    await loadStrategies();
+    if ($("#page-lists").classList.contains("active")) loadList(currentList);
+  } catch (err) {
+    toast(errText(err), "err", 9000);
+  }
+});
+
+/* Горячие клавиши: Ctrl+S для сохранения, Ctrl+F для поиска в журнале, Esc для закрытия мастера */
+document.addEventListener("keydown", (e) => {
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && e.key.toLowerCase() === "s") {
+    if ($("#page-lists").classList.contains("active") && !$("#listSave").hidden) {
+      e.preventDefault();
+      $("#listSave").click();
+    } else if ($("#page-warp").classList.contains("active")) {
+      e.preventDefault();
+      (document.activeElement === $("#warpExes") ? $("#warpExesSave") : $("#warpCustomSave"))?.click();
+    } else if ($("#page-strategies").classList.contains("active") && state?.settings.strategy === "custom") {
+      e.preventDefault();
+      $("[data-save-custom]")?.click();
+    }
+  } else if (mod && e.key.toLowerCase() === "f" && $("#page-logs").classList.contains("active")) {
+    e.preventDefault();
+    $("#logSearch")?.focus();
+  } else if (e.key === "Escape" && wizardOpen() && $('[data-step="2"]')?.hidden) {
+    closeWizard();
+  }
+});
 
 /* ===================================================================== events */
 listen("engine-state", () => { if (!busy) refresh(); });

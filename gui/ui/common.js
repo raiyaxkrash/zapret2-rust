@@ -179,20 +179,22 @@ function mockInvoke(cmd, args) {
   const demo = !!new URLSearchParams(location.search).get("demo");
   const m = (window.__mock ||= {
     running: demo, since: demo ? Math.floor(Date.now() / 1000) - 5025 : null,
-    settings: { packs: demo ? ["telegram", "meta"] : [], strategy: demo ? "seqovl" : "fake_multisplit_md5", youtube_strategy: demo ? "fake_multisplit_md5" : "", youtube: true, discord: true, discord_voice: true, custom: false, custom_mode: "list", quic: true, autostart: false, start_minimized: true, engine_on_launch: true, close_to_tray: true, debug_log: false, engine_auto_update: true, content_auto_update: true, app_auto_check: true, app_update_url: "https://github.com/raiyaxkrash/zapret2-rust/releases/latest/download/latest.json", theme: new URLSearchParams(location.search).get("theme") || "system", expert: !!new URLSearchParams(location.search).get("expert"), lang: "auto", custom_tls: "--payload=tls_client_hello --lua-desync=multisplit:pos=1", custom_http: "", custom_quic: "", tg_proxy: demo, tg_proxy_port: 1443, warp: demo, warp_port: 40080, warp_junk: true, warp_apps: true, warp_packs: [], warp_custom: demo ? ["linkedin.com", "signal.org"] : [], watchdog: true, watchdog_auto: true, network_memory: true, tg_proxy_secret: "0123456789abcdef0123456789abcdef" },
+    settings: { packs: demo ? ["telegram", "meta"] : [], strategy: demo ? "seqovl" : "fake_multisplit_md5", youtube_strategy: demo ? "fake_multisplit_md5" : "", youtube: true, discord: true, discord_voice: true, custom: false, custom_mode: "list", quic: true, autostart: false, start_minimized: true, engine_on_launch: true, close_to_tray: true, hotkey: true, dns_doh: false, debug_log: false, engine_auto_update: true, content_auto_update: true, app_auto_check: true, app_update_url: "https://github.com/raiyaxkrash/zapret2-rust/releases/latest/download/latest.json", theme: new URLSearchParams(location.search).get("theme") || "system", expert: !!new URLSearchParams(location.search).get("expert"), lang: "auto", custom_tls: "--payload=tls_client_hello --lua-desync=multisplit:pos=1", custom_http: "", custom_quic: "", tg_proxy: demo, tg_proxy_port: 1443, warp: demo, warp_port: 40080, warp_junk: true, warp_apps: true, warp_packs: [], warp_custom: demo ? ["linkedin.com", "signal.org"] : [], warp_exes: demo ? ["discord.exe"] : [], warp_license: "", watchdog: true, watchdog_auto: true, network_memory: true, tg_proxy_secret: "0123456789abcdef0123456789abcdef" },
     lists: { user: "# Мои сайты\nrutracker.org\n", exclude: "gosuslugi.ru\n", auto: "", youtube: "youtube.com\ngooglevideo.com\n", discord: "discord.com\n" },
   });
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const strategies = [
     { id: "fake_multisplit_md5", name: "Фейк + разрезание (MD5)", description: "Универсальный вариант: фейковый ClientHello с подписью TCP MD5, затем запрос режется на части.", tls: ["--payload=tls_client_hello", "--lua-desync=fake:blob=tls_google:tcp_md5:repeats=6"], http: [], quic: null },
+    { id: "fake_tlsmod_dupsid", name: "Фейк + мутация TLS (rnd, dupsid)", description: "Поддельный ClientHello с мутацией случайных байт и копированием Session ID, затем нарезка запроса.", tls: ["--payload=tls_client_hello", "--lua-desync=fake:blob=tls_google:tls_mod=rnd,dupsid,sni=www.google.com:ip_autottl=-2,3-20:repeats=6"], http: [], quic: null },
     { id: "seqovl", name: "Наложение последовательности (seqovl)", description: "Без отдельных фейков. Мягкий и быстрый способ.", tls: ["--lua-desync=multisplit:pos=1:seqovl=681"], http: [], quic: null },
+    { id: "syndata_multisplit", name: "Данные в SYN + разрезание", description: "Часть рукопожатия отправляется уже в пакете установки соединения, остаток режется со смещением.", tls: ["--payload=tls_client_hello", "--lua-desync=syndata:blob=0x1603"], http: [], quic: null },
     { id: "custom", name: "Свои параметры", description: "Параметры, заданные вручную.", tls: [], http: [], quic: null },
   ];
   switch (cmd) {
     case "get_state": return Promise.resolve({
       status: { running: m.running, since: m.since, last_error: null, command_line: "", pid: null },
       settings: m.settings, engine_version: "1.0.7", app_version: "2.1.1", conflicts: new URLSearchParams(location.search).get("others") && !m.running ? [{ name: "winws.exe", pid: 4242 }] : [], testing: false,
-      data_dir: "C:\\Users\\user\\AppData\\Local\\Zapret2GUI", user_domains: 1, auto_domains: 0, autostart: m.settings.autostart,
+      data_dir: "C:\\Users\\user\\AppData\\Local\\Zapret2GUI", portable: false, dns_doh_running: !!m.settings.dns_doh, user_domains: 1, auto_domains: 0, autostart: m.settings.autostart,
       content_version: 2,
       app_update: new URLSearchParams(location.search).get("upd") ? { configured: true, available: true, current: "1.1.0", latest: "1.2.0", notes: "Меньше нагрузка на видеокарту" } : null,
       warp: { running: !!m.settings.warp, connected: !!m.settings.warp, since: null, last_error: null, endpoint: "162.159.192.1:2408", port: 40080, rx: 48234496, tx: 3145728, domains: (m.settings.warp_custom || []).length, apps: !!m.settings.warp_apps, mask: "junk" },
@@ -209,7 +211,7 @@ function mockInvoke(cmd, args) {
       { title: "DNS", status: "good", detail: "Подмены адресов не найдено", advice: "" },
       { title: "YouTube", status: "good", detail: "Открывается с обходом (320 мс)", advice: "" },
       { title: "Discord", status: "good", detail: "Открывается с обходом (180 мс)", advice: "" },
-      { title: "Instagram", status: "bad", detail: "Соединение обрывается (обрыв после 16 КБ): так работает система DPI", advice: "Текущая стратегия не помогает: подберите стратегию заново на странице «Стратегии»." },
+      { title: "Instagram", status: "bad", detail: "Соединение обрывается (обрыв после 16 КБ): так работает система DPI", advice: "Текущая стратегия не помогает: подберите стратегию заново на странице «Стратегии».", action: "strategies" },
       { title: "ChatGPT и другие нейросети", status: "warn", detail: "Сервис сам закрыл доступ из вашего региона", advice: "Ни обход, ни WARP тут не помогут: сервис проверяет страну, а Cloudflare показывает ему вашу настоящую страну. Нужен VPN с сервером за границей." },
       { title: "zapret2", status: "good", detail: "Версия 1.0.7, обход включён", advice: "" },
     ]);
@@ -236,9 +238,14 @@ function mockInvoke(cmd, args) {
     case "get_isp": return wait(300).then(() => ({ isp: { asn: 12389, name: "PJSC Rostelecom" }, hint: null }));
     case "save_settings": m.settings = args.new; return Promise.resolve(m.settings);
     case "get_command_line": return Promise.resolve("engine\\bin\\winws2.exe --wf-tcp-out=80,443 ...");
-    case "read_list": return Promise.resolve(m.lists[args.name] || "");
+    case "read_list": return Promise.resolve(args.name?.startsWith("pack:") ? `# Набор ${args.name.slice(5)}\nt.me\ntelegram.org\nweb.telegram.org\n` : (m.lists[args.name] || ""));
     case "write_list": m.lists[args.name] = args.content; return Promise.resolve();
-    case "get_logs": return Promise.resolve(["[app] Предпросмотр интерфейса без Tauri"]);
+    case "get_logs": return Promise.resolve([
+      "[app] Предпросмотр интерфейса без Tauri",
+      "[warp] WARP подключён через 162.159.192.1:2408 (случайные пакеты)",
+      "[tg] Прокси для Telegram работает на 127.0.0.1:1443",
+      "winws2: Lua desync initialized",
+    ]);
     case "run_strategy_test": if (args?.site) return wait(1500).then(() => ({
       site: args.site.replace(/^https?:\/\/(www\.)?/, "").split("/")[0], cancelled: false, best: "seqovl", best_youtube: null,
       baseline: { id: "baseline", ok: 0, total: 1, avg_ms: 0, checks: [], yt_ok: 0, yt_total: 0, other_ok: 0, other_total: 1, error: null },
@@ -250,11 +257,19 @@ function mockInvoke(cmd, args) {
     return wait(1500).then(() => ({
       baseline: { id: "baseline", name: "Без обхода", ok: 1, total: 7, avg_ms: 300, checks: [], yt_ok: 0, yt_total: 4, other_ok: 1, other_total: 3 },
       results: [
-        { id: "fake_multisplit_md5", name: "Фейк + разрезание (MD5)", ok: 4, total: 7, avg_ms: 420, checks: [], yt_ok: 1, yt_total: 4, other_ok: 3, other_total: 3 },
-        { id: "seqovl", name: "Наложение последовательности (seqovl)", ok: 6, total: 7, avg_ms: 380, checks: [], yt_ok: 4, yt_total: 4, other_ok: 2, other_total: 3 },
+        { id: "fake_multisplit_md5", name: "Фейк + разрезание (MD5)", ok: 4, total: 7, avg_ms: 420, checks: [
+          { url: "https://www.youtube.com/", service: "youtube", ok: true, ms: 340, bytes: 65536, error: null },
+          { url: "https://redirector.googlevideo.com/report_mapping", service: "youtube", ok: false, ms: 5002, bytes: 16384, error: "обрыв после 16 КБ" },
+          { url: "https://discord.com/", service: "discord", ok: true, ms: 190, bytes: 65536, error: null },
+        ], yt_ok: 1, yt_total: 4, other_ok: 3, other_total: 3 },
+        { id: "seqovl", name: "Наложение последовательности (seqovl)", ok: 6, total: 7, avg_ms: 380, checks: [
+          { url: "https://www.youtube.com/", service: "youtube", ok: true, ms: 280, bytes: 65536, error: null },
+          { url: "https://redirector.googlevideo.com/report_mapping", service: "youtube", ok: true, ms: 390, bytes: 65536, error: null },
+          { url: "https://discord.com/", service: "discord", ok: true, ms: 210, bytes: 65536, error: null },
+        ], yt_ok: 4, yt_total: 4, other_ok: 2, other_total: 3 },
         { id: "custom", name: "Свои параметры", ok: 2, total: 7, avg_ms: 610, checks: [], yt_ok: 0, yt_total: 4, other_ok: 2, other_total: 3 },
       ],
-      best: "fake_multisplit_md5", best_youtube: "seqovl", cancelled: false,
+      best: "fake_multisplit_md5", best_youtube: "seqovl", recommend_quic_off: false, cancelled: false,
     }));
     case "check_engine_update": return wait(500).then(() => ({ current: "1.0.7", latest: "1.0.7", available: false, published_at: "2026-11-05T08:01:55Z" }));
     case "check_app_update": return Promise.resolve({ configured: true, available: false });
@@ -278,6 +293,25 @@ function mockInvoke(cmd, args) {
       { service: "discord", ok: true, ms: 180 }, { service: "discord", ok: true, ms: 220 },
     ] }));
     case "add_domain": return wait(300).then(() => `${args.input.replace(/^https?:\/\/(www\.)?/, "").split("/")[0]} добавлен`);
+    case "add_warp_domain": {
+      const d = args.input.replace(/^https?:\/\/(www\.)?/, "").split("/")[0].toLowerCase();
+      if (!m.settings.warp_custom.includes(d)) m.settings.warp_custom.push(d);
+      m.settings.warp = true;
+      return wait(200).then(() => `${d} добавлен в WARP`);
+    }
+    case "get_running_apps": return Promise.resolve(["discord.exe", "steam.exe", "telegram.exe", "chrome.exe", "obs64.exe", "robloxplayerbeta.exe"]);
+    case "add_warp_exe": {
+      const raw = args.input.trim().replace(/^"+|"+$/g, "").split(/[\\/]/).pop().toLowerCase();
+      const exe = raw.endsWith(".exe") ? raw : `${raw}.exe`;
+      m.settings.warp_exes ||= [];
+      if (!m.settings.warp_exes.includes(exe)) m.settings.warp_exes.push(exe);
+      m.settings.warp_apps = true;
+      m.settings.warp = true;
+      return wait(200).then(() => `${exe} добавлен в WARP`);
+    }
+    case "warp_reset_account": return wait(400).then(() => "Аккаунт WARP перевыпущен и переподключён");
+    case "export_backup": return Promise.resolve("Резервная копия сохранена: zapret2-backup.json");
+    case "import_backup": return Promise.resolve("Настройки и списки восстановлены из резервной копии");
     default: return Promise.resolve(null);
   }
 }

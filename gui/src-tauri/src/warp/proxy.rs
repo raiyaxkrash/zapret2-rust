@@ -28,7 +28,7 @@ pub fn pac(domains: &[String], port: u16) -> String {
     )
 }
 
-/// Адрес назначения: через системный DNS, а если он подменён — через DNS-over-HTTPS.
+/// Адрес назначения: через системный DNS, а если он подменён — через DNS-over-HTTPS (Cloudflare / Google).
 async fn resolve(host: &str, port: u16) -> Result<SocketAddrV4, String> {
     if let Ok(ip) = host.parse::<Ipv4Addr>() {
         return Ok(SocketAddrV4::new(ip, port));
@@ -37,24 +37,29 @@ async fn resolve(host: &str, port: u16) -> Result<SocketAddrV4, String> {
         .await
         .map(|it| it.filter_map(|a| match a.ip() { IpAddr::V4(v) => Some(v), _ => None }).collect())
         .unwrap_or_default();
-    if let Some(ip) = sys.iter().find(|ip| !(ip.is_private() || ip.is_loopback() || ip.is_unspecified())) {
+    if let Some(ip) = sys.iter().find(|ip| !(ip.is_private() || ip.is_loopback() || ip.is_unspecified() || ip.is_link_local())) {
         return Ok(SocketAddrV4::new(*ip, port));
     }
-    let c = reqwest::Client::builder().timeout(Duration::from_secs(8)).build().map_err(|e| e.to_string())?;
-    let v: serde_json::Value = c
-        .get(format!("https://cloudflare-dns.com/dns-query?name={host}&type=A"))
-        .header("accept", "application/dns-json")
-        .send()
-        .await
-        .map_err(|e| format!("{host}: {e}"))?
-        .json()
-        .await
-        .map_err(|e| format!("{host}: {e}"))?;
-    v["Answer"]
-        .as_array()
-        .and_then(|a| a.iter().filter(|r| r["type"] == 1).find_map(|r| r["data"].as_str()?.parse::<Ipv4Addr>().ok()))
-        .map(|ip| SocketAddrV4::new(ip, port))
-        .ok_or_else(|| format!("{host}: адрес не найден"))
+    static DOH_CLIENT: std::sync::OnceLock<Option<reqwest::Client>> = std::sync::OnceLock::new();
+    let c = DOH_CLIENT
+        .get_or_init(|| reqwest::Client::builder().timeout(Duration::from_secs(6)).build().ok())
+        .as_ref()
+        .ok_or_else(|| "Не удалось создать HTTP-клиент DoH".to_string())?;
+
+    for url in [
+        format!("https://cloudflare-dns.com/dns-query?name={host}&type=A"),
+        format!("https://dns.google/resolve?name={host}&type=A"),
+    ] {
+        let Ok(resp) = c.get(&url).header("accept", "application/dns-json").send().await else { continue };
+        let Ok(v) = resp.json::<serde_json::Value>().await else { continue };
+        if let Some(ip) = v["Answer"]
+            .as_array()
+            .and_then(|a| a.iter().filter(|r| r["type"] == 1).find_map(|r| r["data"].as_str()?.parse::<Ipv4Addr>().ok()))
+        {
+            return Ok(SocketAddrV4::new(ip, port));
+        }
+    }
+    Err(format!("{host}: адрес не найден"))
 }
 
 /// Пересылка между клиентом и соединением в туннеле.

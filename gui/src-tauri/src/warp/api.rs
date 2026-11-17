@@ -151,6 +151,33 @@ pub async fn register() -> Result<Account, String> {
     })
 }
 
+/// Привязывает ключ подписки 1.1.1.1 WARP+ к зарегистрированному устройству.
+pub async fn bind_license(acc: &Account, license: &str) -> Result<(), String> {
+    let key = license.trim();
+    if key.is_empty() {
+        return Ok(());
+    }
+    let c = reqwest::Client::builder()
+        .user_agent(USER_AGENT)
+        .timeout(Duration::from_secs(20))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = c
+        .put(format!("{API}/reg/{}/account", acc.id))
+        .header("CF-Client-Version", CLIENT_VERSION)
+        .bearer_auth(&acc.token)
+        .json(&serde_json::json!({ "license": key }))
+        .send()
+        .await
+        .map_err(|e| format!("Сервер WARP недоступен: {e}"))?;
+    if !resp.status().is_success() {
+        let code = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("Ключ WARP+ не принят (HTTP {code}): {}", text.chars().take(140).collect::<String>()));
+    }
+    Ok(())
+}
+
 /// Время в формате RFC 3339 (как ждёт API), без зависимости от chrono.
 fn chrono_like_now() -> String {
     let secs = crate::util::now_unix() as i64;

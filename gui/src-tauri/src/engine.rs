@@ -282,16 +282,9 @@ impl Engine {
     /// Сторонние процессы, использующие WinDivert (кроме нашего).
     pub fn conflicts(&self) -> Vec<Conflict> {
         let own = self.status().pid;
-        let out = match hidden_command("tasklist").args(["/FO", "CSV", "/NH"]).output() {
-            Ok(o) => o,
-            Err(_) => return vec![],
-        };
-        String::from_utf8_lossy(&out.stdout)
-            .lines()
-            .filter_map(|l| {
-                let mut parts = l.split("\",\"");
-                let name = parts.next()?.trim_matches('"').to_string();
-                let pid: u32 = parts.next()?.trim_matches('"').parse().ok()?;
+        crate::util::list_processes()
+            .into_iter()
+            .filter_map(|(name, pid)| {
                 let lname = name.to_lowercase();
                 (CONFLICTING.contains(&lname.as_str()) && Some(pid) != own).then_some(Conflict { name, pid })
             })

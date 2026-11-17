@@ -72,6 +72,7 @@ pub type RawHook = Arc<dyn Fn(&[u8]) -> bool + Send + Sync>;
 pub struct Tunnel {
     cmd: mpsc::Sender<Cmd>,
     wake: Arc<Notify>,
+    stop: Arc<Notify>,
     raw_out: mpsc::Sender<Vec<u8>>,
     raw_hook: Arc<RwLock<Option<RawHook>>>,
     pub endpoint: SocketAddr,
@@ -94,6 +95,12 @@ impl Tunnel {
 
     pub fn wake(&self) -> Arc<Notify> {
         self.wake.clone()
+    }
+
+    /// Немедленно завершает цикл туннеля и освобождает UDP-сокет, даже если открыты прокси-соединения.
+    pub fn close(&self) {
+        self.stats.dead.store(true, Ordering::Relaxed);
+        self.stop.notify_waiters();
     }
 
     /// Отправляет готовый IPv4-пакет (адрес отправителя — `local`) в туннель.
@@ -318,7 +325,10 @@ const PROBE_ENDPOINTS: usize = 5;
 async fn try_route(acc: &Account, addr: SocketAddr, route: &Route, opts: &Options) -> Result<Arc<Tunnel>, String> {
     let (udp, wg) = handshake(acc, addr, route.mask, opts.quic.clone(), HANDSHAKE_LIMIT).await?;
     let t = run(acc, udp, wg, addr);
-    probe(&t).await?;
+    if let Err(e) = probe(&t).await {
+        t.close();
+        return Err(e);
+    }
     Ok(t)
 }
 
@@ -375,7 +385,10 @@ pub async fn start(acc: &Account, opts: &Options, log: impl Fn(String)) -> Resul
                     log(format!("WARP подключён через {} ({})", route.endpoint, mask_name(route.mask)));
                     return Ok((t, route));
                 }
-                Err(e) => last = e,
+                Err(e) => {
+                    t.close();
+                    last = e;
+                }
             }
         }
     }
@@ -449,13 +462,14 @@ fn run(acc: &Account, udp: UdpSocket, wg: Wg, endpoint: SocketAddr) -> Arc<Tunne
     let (raw_tx, raw_rx) = mpsc::channel(1024);
     let raw_hook: Arc<RwLock<Option<RawHook>>> = Arc::default();
     let wake = Arc::new(Notify::new());
+    let stop = Arc::new(Notify::new());
     let stats = Arc::new(Stats::default());
     let local: Ipv4Addr = acc.address_v4.split('/').next().unwrap_or("172.16.0.2").parse().unwrap_or(Ipv4Addr::new(172, 16, 0, 2));
     stats.last_rx.store(crate::util::now_unix(), Ordering::Relaxed);
-    let t = Arc::new(Tunnel { cmd: cmd_tx, wake: wake.clone(), raw_out: raw_tx, raw_hook: raw_hook.clone(), endpoint, local, stats: stats.clone() });
+    let t = Arc::new(Tunnel { cmd: cmd_tx, wake: wake.clone(), stop: stop.clone(), raw_out: raw_tx, raw_hook: raw_hook.clone(), endpoint, local, stats: stats.clone() });
     let st = stats.clone();
     tokio::spawn(async move {
-        stack_loop(udp, wg, local, cmd_rx, Raw { rx: raw_rx, hook: raw_hook }, wake, stats).await;
+        stack_loop(udp, wg, local, cmd_rx, Raw { rx: raw_rx, hook: raw_hook }, wake, stop, stats).await;
         st.dead.store(true, Ordering::Relaxed);
     });
     t
@@ -479,7 +493,8 @@ struct Raw {
     hook: Arc<RwLock<Option<RawHook>>>,
 }
 
-async fn stack_loop(udp: UdpSocket, mut wg: Wg, local: Ipv4Addr, mut cmd_rx: mpsc::Receiver<Cmd>, mut raw: Raw, wake: Arc<Notify>, stats: Arc<Stats>) {
+#[allow(clippy::too_many_arguments)]
+async fn stack_loop(udp: UdpSocket, mut wg: Wg, local: Ipv4Addr, mut cmd_rx: mpsc::Receiver<Cmd>, mut raw: Raw, wake: Arc<Notify>, stop: Arc<Notify>, stats: Arc<Stats>) {
     let mut dev = VDev::default();
     let mut iface = Interface::new(Config::new(HardwareAddress::Ip), &mut dev, now());
     iface.update_ip_addrs(|a| {
@@ -556,6 +571,7 @@ async fn stack_loop(udp: UdpSocket, mut wg: Wg, local: Ipv4Addr, mut cmd_rx: mps
                     next = if n < 256 { raw.rx.try_recv().ok() } else { None };
                 }
             }
+            _ = stop.notified() => break,
             _ = wake.notified() => {}
             _ = timers.tick() => {
                 if let TunnResult::WriteToNetwork(p) = wg.tunn.update_timers(&mut out) {

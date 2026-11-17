@@ -1,7 +1,9 @@
 mod autostart;
 mod content;
 mod diag;
+mod dns_guard;
 mod engine;
+mod hotkey;
 mod isp;
 mod networks;
 mod others;
@@ -58,6 +60,8 @@ pub struct AppState {
     /// Провайдер, определённый за этот запуск.
     isp: Mutex<Option<isp::Isp>>,
     pub warp: Arc<warp::Warp>,
+    pub dns_guard: Arc<dns_guard::DnsGuard>,
+    pub hotkey: hotkey::GlobalHotkey,
 }
 
 type CmdResult<T> = Result<T, String>;
@@ -157,19 +161,20 @@ pub async fn start_with(app: &AppHandle, settings: &Settings, strategy_id: &str,
     if !conflicts.is_empty() {
         let names: Vec<_> = conflicts.iter().map(|c| c.name.clone()).collect();
         return Err(format!(
-            "Уже запущены другие программы обхода ({}). Закройте их кнопкой «Завершить» на главном экране.",
+            "Уже запущены другие программы обхода ({}). Закройте их кнопкой «Отключить» на главном экране.",
             names.join(", ")
         ));
     }
     state.engine.start(app, &state.paths.winws(), &state.paths.root, &args)?;
-    tokio::time::sleep(Duration::from_millis(1500)).await;
-    let st = state.engine.status();
-    if !st.running {
-        let tail: Vec<String> = state.engine.logs().into_iter().rev().take(6).collect::<Vec<_>>().into_iter().rev().collect();
-        return Err(format!(
-            "winws2 не запустился. {}",
-            if tail.is_empty() { String::new() } else { format!("Последние строки журнала:\n{}", tail.join("\n")) }
-        ));
+    for _ in 0..8 {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        if !state.engine.status().running {
+            let tail: Vec<String> = state.engine.logs().into_iter().rev().take(6).collect::<Vec<_>>().into_iter().rev().collect();
+            return Err(format!(
+                "winws2 не запустился. {}",
+                if tail.is_empty() { String::new() } else { format!("Последние строки журнала:\n{}", tail.join("\n")) }
+            ));
+        }
     }
     Ok(())
 }
@@ -206,6 +211,9 @@ pub(crate) async fn apply_report(app: &AppHandle, report: &TestReport) -> CmdRes
     }
     if let Some(yt) = &report.best_youtube {
         s.youtube_strategy = if *yt == s.strategy { String::new() } else { yt.clone() };
+    }
+    if report.recommend_quic_off {
+        s.quic = false;
     }
     s.save(&state.paths.settings_file())?;
     *state.settings.lock().unwrap() = s.clone();
@@ -292,7 +300,7 @@ fn tray_icon(app: &AppHandle, running: bool) -> Option<tauri::image::Image<'stat
     let (rgba, w, h) = OFF
         .get_or_init(|| {
             let mut px = base.rgba().to_vec();
-            for p in px.chunks_exact_mut(4) {
+            for p in px.as_chunks_mut::<4>().0 {
                 let y = (0.299 * p[0] as f32 + 0.587 * p[1] as f32 + 0.114 * p[2] as f32) as u8;
                 // Светло-серый, чтобы значок был виден и на тёмной, и на светлой панели задач.
                 let g = 96 + y / 2;
@@ -364,10 +372,87 @@ async fn tg_apply(app: &AppHandle, restart: bool) -> CmdResult<()> {
 }
 
 fn stop_all(app: &AppHandle) {
+    save_window_bounds(app);
     let state = app.state::<AppState>();
+    state.hotkey.stop();
+    state.dns_guard.stop();
     state.engine.stop(app);
     state.tg.stop(app);
     state.warp.stop(app);
+}
+
+async fn dns_apply(app: &AppHandle) -> CmdResult<()> {
+    let state = app.state::<AppState>();
+    let on = state.settings.lock().unwrap().dns_doh;
+    if !on {
+        if state.dns_guard.is_running() {
+            state.dns_guard.stop();
+            state.engine.log(app, "[app] Защита DNS (DoH) выключена");
+        }
+        return Ok(());
+    }
+    if state.dns_guard.is_running() {
+        return Ok(());
+    }
+    ensure_engine(app).await?;
+    state.dns_guard.start(&state.paths.engine.join("bin"))?;
+    state.engine.log(app, "[app] Защита DNS (DoH) включена");
+    Ok(())
+}
+
+fn toggle_bypass_bg(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let state = app.state::<AppState>();
+        let _guard = state.busy.lock().await;
+        if state.testing.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
+        if state.engine.is_running() {
+            state.engine.stop(&app);
+            update_tray(&app);
+        } else if let Err(e) = start_current(&app).await {
+            let _ = app.emit("toast", format!("Не удалось включить обход: {e}"));
+            show_main(&app);
+        }
+    });
+}
+
+fn hotkey_apply(app: &AppHandle, enabled: bool) {
+    let h = app.clone();
+    app.state::<AppState>().hotkey.apply(enabled, move || {
+        toggle_bypass_bg(h.clone());
+    });
+}
+
+fn save_window_bounds(app: &AppHandle) {
+    let Some(w) = app.get_webview_window("main") else { return };
+    if w.is_minimized().unwrap_or(false) || w.is_maximized().unwrap_or(false) {
+        return;
+    }
+    let (Ok(pos), Ok(size)) = (w.outer_position(), w.inner_size()) else { return };
+    if size.width < 800 || size.height < 550 || pos.x < -16000 || pos.y < -16000 {
+        return;
+    }
+    let bounds = Some([pos.x, pos.y, size.width as i32, size.height as i32]);
+    let state = app.state::<AppState>();
+    let mut s = state.settings.lock().unwrap();
+    if s.window_bounds != bounds {
+        s.window_bounds = bounds;
+        let _ = s.save(&state.paths.settings_file());
+    }
+}
+
+fn restore_window_bounds(app: &AppHandle, bounds: Option<[i32; 4]>) {
+    let Some([x, y, width, height]) = bounds else { return };
+    if width < 800 || height < 550 {
+        return;
+    }
+    let (cx, cy) = ((x + width / 2) as f64, (y + height / 2) as f64);
+    let Ok(Some(_)) = app.monitor_from_point(cx, cy) else { return };
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.set_size(tauri::PhysicalSize::new(width as u32, height as u32));
+        let _ = w.set_position(PhysicalPosition::new(x, y));
+    }
 }
 
 // ---------------------------------------------------------------- WARP
@@ -399,13 +484,58 @@ async fn warp_apply(app: &AppHandle, restart: bool) -> CmdResult<()> {
         return Ok(());
     }
     let domains = warp_domains(&state, &s);
+    let exes = s.warp_exes.clone();
     if state.warp.is_running() && !restart {
-        state.warp.set_domains(domains);
+        state.warp.set_targets(domains, exes);
         return Ok(());
     }
     let root = state.paths.root.clone();
-    let apps = s.warp_apps.then(|| state.paths.engine.join("bin"));
-    state.warp.start(app, &root, s.warp_port, s.warp_junk, domains, apps).await
+    let need_apps = s.warp_apps || !exes.is_empty();
+    if need_apps {
+        let _ = ensure_engine(app).await;
+    }
+    let apps = need_apps.then(|| state.paths.engine.join("bin"));
+    state.warp.start(app, &root, s.warp_port, s.warp_junk, domains, exes, apps).await
+}
+
+#[tauri::command]
+fn get_running_apps() -> Vec<String> {
+    util::running_app_names()
+}
+
+#[tauri::command]
+async fn add_warp_exe(app: AppHandle, input: String) -> CmdResult<String> {
+    let exe = util::normalize_exe_name(&input)?;
+    let state = app.state::<AppState>();
+    let mut s = state.settings.lock().unwrap().clone();
+    if s.warp_exes.iter().any(|x| x.eq_ignore_ascii_case(&exe)) {
+        return Ok(format!("{exe} уже есть в списке программ WARP"));
+    }
+    s.warp_exes.push(exe.clone());
+    s.warp_apps = true;
+    let turned_on = !s.warp;
+    if turned_on {
+        s.warp = true;
+    }
+    save_settings(app, s).await?;
+    Ok(if turned_on {
+        format!("{exe} добавлен в WARP, туннель включается")
+    } else {
+        format!("{exe} добавлен в WARP")
+    })
+}
+
+#[tauri::command]
+async fn warp_reset_account(app: AppHandle) -> CmdResult<String> {
+    let root = app.state::<AppState>().paths.root.clone();
+    warp::reset_account(&root);
+    let on = app.state::<AppState>().settings.lock().unwrap().warp;
+    if on {
+        warp_apply(&app, true).await?;
+        Ok("Аккаунт WARP перевыпущен и переподключён".into())
+    } else {
+        Ok("Аккаунт WARP сброшен: новый ключ создастся при включении".into())
+    }
 }
 
 #[tauri::command]
@@ -453,7 +583,7 @@ fn show_main(app: &AppHandle) {
 // ---------------------------------------------------------------- tray flyout
 
 const FLYOUT_W: f64 = 360.0;
-const FLYOUT_H: f64 = 392.0;
+const FLYOUT_H: f64 = 448.0;
 
 fn create_flyout(app: &AppHandle) -> tauri::Result<()> {
     let w = WebviewWindowBuilder::new(app, "tray", WebviewUrl::App("tray.html".into()))
@@ -481,7 +611,7 @@ fn create_flyout(app: &AppHandle) -> tauri::Result<()> {
 fn toggle_flyout(app: &AppHandle, icon: Rect) {
     let Some(w) = app.get_webview_window("tray") else { return };
     if w.is_visible().unwrap_or(false) {
-        set_shown(&app, "tray", false);
+        set_shown(app, "tray", false);
         return;
     }
     let state = app.state::<AppState>();
@@ -522,6 +652,8 @@ struct AppInfo {
     conflicts: Vec<Conflict>,
     testing: bool,
     data_dir: String,
+    portable: bool,
+    dns_doh_running: bool,
     user_domains: usize,
     auto_domains: usize,
     autostart: bool,
@@ -543,6 +675,8 @@ fn get_state(app: AppHandle, state: State<'_, AppState>) -> AppInfo {
         conflicts: state.engine.conflicts(),
         testing: state.testing.load(std::sync::atomic::Ordering::SeqCst),
         data_dir: state.paths.root.to_string_lossy().to_string(),
+        portable: state.paths.portable,
+        dns_doh_running: state.dns_guard.is_running(),
         user_domains: paths::count_domains(&state.paths.lists.join("user.txt")),
         auto_domains: paths::count_domains(&state.paths.auto_list()),
         autostart: autostart::is_enabled(),
@@ -658,11 +792,27 @@ async fn save_settings(app: AppHandle, new: Settings) -> CmdResult<Settings> {
     let _guard = state.busy.lock().await;
     let old = state.settings.lock().unwrap().clone();
     let mut new = new;
+    if new.window_bounds.is_none() {
+        new.window_bounds = old.window_bounds;
+    }
     if !tgproxy::valid_secret(&new.tg_proxy_secret) {
         new.tg_proxy_secret = old.tg_proxy_secret.clone();
     }
     if new.tg_proxy_port < 1024 {
         return Err("Порт прокси для Telegram должен быть от 1024 до 65535".into());
+    }
+    if new.warp_port < 1024 {
+        return Err("Порт локального прокси WARP должен быть от 1024 до 65535".into());
+    }
+    if new.warp_port == new.tg_proxy_port {
+        return Err("Порты WARP и прокси для Telegram не должны совпадать".into());
+    }
+    new.warp_custom = util::normalize_domain_vec(&new.warp_custom)?;
+    new.warp_exes = util::normalize_exe_vec(&new.warp_exes)?;
+    new.warp_license = new.warp_license.trim().to_string();
+    let license_applied = old.warp_license != new.warp_license && !new.warp_license.is_empty();
+    if license_applied {
+        warp::apply_license(&state.paths.root, &new.warp_license).await?;
     }
     if new.autostart != old.autostart || new.autostart != autostart::is_enabled() {
         autostart::set(new.autostart)?;
@@ -674,6 +824,9 @@ async fn save_settings(app: AppHandle, new: Settings) -> CmdResult<Settings> {
     }
     if old.lang != new.lang {
         update_tray(&app);
+    }
+    if old.hotkey != new.hotkey {
+        hotkey_apply(&app, new.hotkey);
     }
 
     // Перезапускаем обход только если поменялось то, что влияет на winws2.
@@ -697,9 +850,23 @@ async fn save_settings(app: AppHandle, new: Settings) -> CmdResult<Settings> {
         networks::remember(&app, "manual");
     }
     let _ = app.emit("settings-changed", new.clone());
-    let warp_restart = old.warp_port != new.warp_port || old.warp_junk != new.warp_junk || old.warp_apps != new.warp_apps;
-    if old.warp != new.warp || (new.warp && (warp_restart || old.warp_packs != new.warp_packs || old.warp_custom != new.warp_custom)) {
+    let old_need_apps = old.warp_apps || !old.warp_exes.is_empty();
+    let new_need_apps = new.warp_apps || !new.warp_exes.is_empty();
+    let warp_restart = old.warp_port != new.warp_port
+        || old.warp_junk != new.warp_junk
+        || old_need_apps != new_need_apps
+        || license_applied;
+    if old.warp != new.warp
+        || (new.warp
+            && (warp_restart
+                || old.warp_packs != new.warp_packs
+                || old.warp_custom != new.warp_custom
+                || old.warp_exes != new.warp_exes))
+    {
         warp_apply(&app, warp_restart).await?;
+    }
+    if old.dns_doh != new.dns_doh {
+        dns_apply(&app).await?;
     }
     let tg_changed = old.tg_proxy_port != new.tg_proxy_port || old.tg_proxy_secret != new.tg_proxy_secret;
     if old.tg_proxy != new.tg_proxy || (new.tg_proxy && tg_changed) {
@@ -728,11 +895,98 @@ async fn write_list(app: AppHandle, name: String, content: String) -> CmdResult<
         return Err("Встроенные списки обновляются вместе с приложением. Добавляйте сайты в «Мои сайты».".into());
     }
     let p = state.paths.list_file(&name).ok_or("Неизвестный список")?;
-    let normalized: String = content.replace("\r\n", "\n").lines().map(|l| format!("{}\n", l.trim())).collect();
+    let normalized = util::normalize_list_text(&content)?;
     fs::write(&p, normalized).map_err(|e| format!("Не удалось сохранить список: {e}"))?;
     // Списки читаются winws2 только при старте.
     let _guard = state.busy.lock().await;
     restart_if_running(&app).await
+}
+
+/// Быстрое добавление домена или ссылки в список сайтов WARP.
+#[tauri::command]
+async fn add_warp_domain(app: AppHandle, input: String) -> CmdResult<String> {
+    let domain = util::normalize_domain(&input)?;
+    let state = app.state::<AppState>();
+    let mut s = state.settings.lock().unwrap().clone();
+    if s.warp_custom.iter().any(|d| d.eq_ignore_ascii_case(&domain)) {
+        return Ok(format!("{domain} уже есть в списке WARP"));
+    }
+    s.warp_custom.push(domain.clone());
+    let turned_on = !s.warp;
+    if turned_on {
+        s.warp = true;
+    }
+    save_settings(app, s).await?;
+    Ok(if turned_on {
+        format!("{domain} добавлен в WARP, туннель включается")
+    } else {
+        format!("{domain} добавлен в WARP")
+    })
+}
+
+#[derive(Serialize, serde::Deserialize)]
+struct BackupBundle {
+    version: u32,
+    #[serde(default)]
+    app_version: String,
+    #[serde(default)]
+    exported_at: u64,
+    settings: Settings,
+    #[serde(default)]
+    user_list: String,
+    #[serde(default)]
+    exclude_list: String,
+}
+
+#[tauri::command]
+fn export_backup(app: AppHandle, state: State<'_, AppState>) -> CmdResult<String> {
+    let settings = state.settings.lock().unwrap().clone();
+    let user_list = state.paths.list_file("user").and_then(|p| fs::read_to_string(p).ok()).unwrap_or_default();
+    let exclude_list = state.paths.list_file("exclude").and_then(|p| fs::read_to_string(p).ok()).unwrap_or_default();
+    let bundle = BackupBundle {
+        version: 1,
+        app_version: app.package_info().version.to_string(),
+        exported_at: util::now_unix(),
+        settings,
+        user_list,
+        exclude_list,
+    };
+    let json = serde_json::to_string_pretty(&bundle).map_err(|e| e.to_string())?;
+    let downloads = std::env::var_os("USERPROFILE")
+        .map(std::path::PathBuf::from)
+        .map(|p| p.join("Downloads"))
+        .filter(|p| p.is_dir())
+        .unwrap_or_else(|| state.paths.root.clone());
+    let filename = format!("zapret2-backup-{}.json", util::now_unix());
+    let dst = downloads.join(&filename);
+    fs::write(&dst, json).map_err(|e| format!("Не удалось сохранить резервную копию: {e}"))?;
+    let _ = util::hidden_command("explorer").arg(format!("/select,{}", dst.display())).spawn();
+    Ok(format!("Резервная копия сохранена: {filename}"))
+}
+
+#[tauri::command]
+async fn import_backup(app: AppHandle, json: String) -> CmdResult<String> {
+    let bundle: BackupBundle = serde_json::from_str(&json)
+        .map_err(|_| "Файл резервной копии повреждён или не подходит".to_string())?;
+    let state = app.state::<AppState>();
+    let user_norm = util::normalize_list_text(&bundle.user_list)?;
+    let excl_norm = util::normalize_list_text(&bundle.exclude_list)?;
+    if let Some(p) = state.paths.list_file("user") {
+        fs::write(p, user_norm).map_err(|e| format!("Не удалось сохранить список: {e}"))?;
+    }
+    if let Some(p) = state.paths.list_file("exclude") {
+        fs::write(p, excl_norm).map_err(|e| format!("Не удалось сохранить список: {e}"))?;
+    }
+    let mut next = bundle.settings;
+    let current_secret = state.settings.lock().unwrap().tg_proxy_secret.clone();
+    if !tgproxy::valid_secret(&next.tg_proxy_secret) {
+        next.tg_proxy_secret = current_secret;
+    }
+    if next.app_update_url.trim().is_empty() {
+        next.app_update_url = settings::DEFAULT_APP_UPDATE_URL.into();
+    }
+    save_settings(app, next).await?;
+    Ok("Настройки и списки восстановлены из резервной копии".into())
 }
 
 /// Добавляет сайт в «Мои сайты» (или в исключения). Принимает и домен, и ссылку целиком.
@@ -1130,20 +1384,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "open" => show_main(app),
-            "toggle" => {
-                let app = app.clone();
-                tauri::async_runtime::spawn(async move {
-                    let state = app.state::<AppState>();
-                    let _guard = state.busy.lock().await;
-                    if state.engine.is_running() {
-                        state.engine.stop(&app);
-                        update_tray(&app);
-                    } else if let Err(e) = start_current(&app).await {
-                        let _ = app.emit("toast", format!("Не удалось включить обход: {e}"));
-                        show_main(&app);
-                    }
-                });
-            }
+            "toggle" => toggle_bypass_bg(app.clone()),
             "quit" => {
                 stop_all(app);
                 app.exit(0);
@@ -1153,6 +1394,9 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .on_tray_icon_event(|tray, event| match event {
             TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, rect, .. } => {
                 toggle_flyout(tray.app_handle(), rect);
+            }
+            TrayIconEvent::Click { button: MouseButton::Middle, button_state: MouseButtonState::Up, .. } => {
+                toggle_bypass_bg(tray.app_handle().clone());
             }
             TrayIconEvent::DoubleClick { button: MouseButton::Left, .. } => {
                 open_main(tray.app_handle().clone(), None);
@@ -1187,6 +1431,8 @@ pub fn run() {
                 settings: Mutex::new(settings.clone()),
                 engine: Arc::new(Engine::default()),
                 tg: Arc::new(TgProxy::default()),
+                dns_guard: Arc::new(dns_guard::DnsGuard::default()),
+                hotkey: hotkey::GlobalHotkey::default(),
                 testing: AtomicBool::new(false),
                 cancel_test: AtomicBool::new(false),
                 last_report: Mutex::new(None),
@@ -1199,9 +1445,11 @@ pub fn run() {
             });
 
             platform::apply_theme(&handle, &settings.theme);
+            restore_window_bounds(&handle, settings.window_bounds);
             create_flyout(&handle)?;
             build_tray(&handle)?;
             update_tray(&handle);
+            hotkey_apply(&handle, settings.hotkey);
             {
                 let h = handle.clone();
                 handle.listen_any("engine-state", move |_| update_tray(&h));
@@ -1223,6 +1471,14 @@ pub fn run() {
                     }
                     if let Err(e) = start_current(&h).await {
                         let _ = h.emit("toast", format!("Не удалось включить обход: {e}"));
+                    }
+                });
+            }
+            if settings.dns_doh {
+                let h = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = dns_apply(&h).await {
+                        let _ = h.emit("toast", format!("Защита DNS: {e}"));
                     }
                 });
             }
@@ -1278,6 +1534,7 @@ pub fn run() {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 let to_tray = app.state::<AppState>().settings.lock().unwrap().close_to_tray;
                 if to_tray {
+                    save_window_bounds(app);
                     api.prevent_close();
                     set_shown(app, window.label(), false);
                 } else {
@@ -1314,6 +1571,12 @@ pub fn run() {
             open_main,
             hide_flyout,
             add_domain,
+            add_warp_domain,
+            add_warp_exe,
+            get_running_apps,
+            warp_reset_account,
+            export_backup,
+            import_backup,
             quick_check,
             enable_testsigning,
             get_packs,
@@ -1338,7 +1601,10 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
+                save_window_bounds(app);
                 if let Some(state) = app.try_state::<AppState>() {
+                    state.hotkey.stop();
+                    state.dns_guard.stop();
                     state.engine.stop(app);
                     state.tg.stop(app);
                     state.warp.stop(app);

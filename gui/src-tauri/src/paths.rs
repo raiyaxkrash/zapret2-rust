@@ -16,7 +16,7 @@ pub const USER_LISTS: &[&str] = &["user", "exclude"];
 
 #[derive(Clone, Debug)]
 pub struct Paths {
-    /// %LOCALAPPDATA%\Zapret2GUI — рабочий каталог winws2 (все пути в аргументах относительные).
+    /// Рабочий каталог winws2 (%LOCALAPPDATA%\Zapret2GUI или папка data рядом с exe в portable-режиме).
     pub root: PathBuf,
     pub engine: PathBuf,
     pub lists: PathBuf,
@@ -26,17 +26,27 @@ pub struct Paths {
     pub resources: PathBuf,
     /// Стратегии и встроенные списки, загруженные из репозитория на GitHub.
     pub remote: PathBuf,
+    /// Портативный режим: включён, если рядом с exe создан файл или папка `portable`.
+    pub portable: bool,
 }
 
 impl Paths {
     pub fn new(resources: PathBuf) -> Result<Self, String> {
-        let local = std::env::var_os("LOCALAPPDATA")
-            .map(PathBuf::from)
-            .ok_or("Не найдена переменная LOCALAPPDATA")?;
-        let root = local.join("Zapret2GUI");
+        let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf));
+        let portable = exe_dir
+            .as_ref()
+            .map(|d| d.join("portable").exists() || d.join("portable.txt").exists())
+            .unwrap_or(false);
+
+        let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
+        let root = if portable {
+            exe_dir.unwrap().join("data")
+        } else {
+            local.clone().ok_or("Не найдена переменная LOCALAPPDATA")?.join("Zapret2GUI")
+        };
+        // Автосписок всегда кладем в LocalLow (если он есть), чтобы winws2 с пониженной целостностью мог туда писать.
         let low = local
-            .parent()
-            .map(|p| p.join("LocalLow").join("Zapret2GUI"))
+            .and_then(|l| l.parent().map(|p| p.join("LocalLow").join("Zapret2GUI")))
             .unwrap_or_else(|| root.join("low"));
         let p = Paths {
             engine: root.join("engine"),
@@ -45,6 +55,7 @@ impl Paths {
             root,
             low,
             resources,
+            portable,
         };
         for d in [&p.root, &p.engine, &p.lists, &p.low] {
             fs::create_dir_all(d).map_err(|e| format!("Не удалось создать {}: {e}", d.display()))?;

@@ -1,18 +1,26 @@
 {
-  "version": 7,
-  "isp": [],
+  "version": 8,
+  "isp": [
+    { "asn": [12389, 42610, 25478, 8905], "name": "Ростелеком", "strategy": "fake_tlsmod_dupsid", "youtube_strategy": "fake_seqovl_badseq" },
+    { "asn": [8359, 25513, 34984], "name": "МТС / МГТС", "strategy": "fake_multisplit_md5", "youtube_strategy": "fake_seqovl_badseq" },
+    { "asn": [3216, 8402], "name": "Билайн", "strategy": "fake_tlsmod_dupsid", "youtube_strategy": "seqovl" },
+    { "asn": [31133, 31224], "name": "МегаФон / Yota", "strategy": "fake_multisplit_ts", "youtube_strategy": "fake_seqovl_badseq" },
+    { "asn": [41733, 9049], "name": "Дом.ру (ЭР-Телеком)", "strategy": "fake_multisplit_md5", "youtube_strategy": "fake_tlsmod_dupsid" },
+    { "asn": [20485], "name": "ТТК", "strategy": "fake_multidisorder_badseq", "youtube_strategy": "fake_seqovl_badseq" },
+    { "asn": [42632, 48190], "name": "T2 (Tele2)", "strategy": "fake_multisplit_ts", "youtube_strategy": "seqovl" }
+  ],
   "warp_packs": [],
   "packs": [
-    { "id": "telegram", "name": "Telegram", "icon": "send", "description": "Сайт, веб-версия, ссылки t.me. Само приложение использует свой протокол: если оно не подключается, включите в нём прокси" },
-    { "id": "meta", "name": "Instagram и Facebook", "icon": "camera", "description": "Instagram, Facebook, WhatsApp, Threads" },
-    { "id": "x", "name": "X (Twitter)", "icon": "hash", "description": "x.com, twitter.com, картинки и видео" },
-    { "id": "torrents", "name": "Торрент-трекеры", "icon": "download", "description": "RuTracker, Rutor, NNM-Club, Kinozal и другие" },
-    { "id": "roblox", "name": "Roblox", "icon": "gamepad", "description": "Сайт и игровые серверы Roblox" },
-    { "id": "signal", "name": "Signal", "icon": "chat", "description": "Мессенджер Signal" },
+    { "id": "telegram", "name": "Telegram", "icon": "send", "description": "Сайт, веб-версия, ссылки t.me. Само приложение использует свой протокол: если оно не подключается, включите в нём прокси", "check": ["https://t.me/", "https://web.telegram.org/"] },
+    { "id": "meta", "name": "Instagram и Facebook", "icon": "camera", "description": "Instagram, Facebook, WhatsApp, Threads", "check": ["https://www.instagram.com/", "https://www.facebook.com/"] },
+    { "id": "x", "name": "X (Twitter)", "icon": "hash", "description": "x.com, twitter.com, картинки и видео", "check": ["https://x.com/", "https://abs.twimg.com/favicons/twitter.3.ico"] },
+    { "id": "torrents", "name": "Торрент-трекеры", "icon": "download", "description": "RuTracker, Rutor, NNM-Club, Kinozal и другие", "check": ["https://rutracker.org/forum/index.php"] },
+    { "id": "roblox", "name": "Roblox", "icon": "gamepad", "description": "Сайт и игровые серверы Roblox", "check": ["https://www.roblox.com/"] },
+    { "id": "signal", "name": "Signal", "icon": "chat", "description": "Мессенджер Signal", "check": ["https://signal.org/"] },
     { "id": "games", "name": "Игры и лаунчеры", "icon": "gamepad", "description": "Steam, Epic Games, Riot, Ubisoft, EA, GOG, FACEIT: магазины, обновления, сообщества", "check": ["https://store.steampowered.com/", "https://steamcommunity.com/"] },
     { "id": "twitch", "name": "Twitch", "icon": "play", "description": "Стримы, чат и превью Twitch", "check": ["https://www.twitch.tv/", "https://static-cdn.jtvnw.net/ttv-static/404_preview-1280x720.jpg"] },
     { "id": "hosting", "name": "Зарубежные хостинги и CDN", "icon": "server", "kind": "ipset", "description": "Сайты, игры и сервисы на Cloudflare, Hetzner, DigitalOcean, OVH, AWS и других хостингах, которые обрываются или грузятся бесконечно", "check": ["https://speed.cloudflare.com/__down?bytes=200000", "https://fsn1-speed.hetzner.com/100MB.bin", "https://proof.ovh.net/files/1Mb.dat", "https://fra-de-ping.vultr.com/vultr.com.100MB.bin"] },
-    { "id": "linkedin", "name": "LinkedIn", "icon": "briefcase", "description": "Сайт и картинки LinkedIn" }
+    { "id": "linkedin", "name": "LinkedIn", "icon": "briefcase", "description": "Сайт и картинки LinkedIn", "check": ["https://www.linkedin.com/"] }
   ],
   "quic_default": [
     "--payload=quic_initial",
@@ -23,6 +31,21 @@
     "--lua-desync=fake:blob=0x00000000000000000000000000000000:repeats=6"
   ],
   "strategies": [
+    {
+      "id": "fake_tlsmod_dupsid",
+      "name": "Фейк + мутация TLS (rnd, dupsid)",
+      "description": "Случайные поля и дублирование Session ID в фейковом TLS ClientHello с испорченным timestamp. Обходит фильтрацию статических фейков.",
+      "tls": [
+        "--payload=tls_client_hello",
+        "--lua-desync=fake:blob=tls_google:tls_mod=rnd,dupsid,sni=www.google.com:tcp_ts=-1000:repeats=6",
+        "--lua-desync=multisplit:pos=1,midsld"
+      ],
+      "http": [
+        "--payload=http_req",
+        "--lua-desync=fake:blob=fake_default_http:tcp_ts=-1000:repeats=6",
+        "--lua-desync=multisplit:pos=method+2,midsld"
+      ]
+    },
     {
       "id": "fake_seqovl_badseq",
       "name": "Фейк + наложение (badseq)",
@@ -50,6 +73,20 @@
       "http": [
         "--payload=http_req",
         "--lua-desync=fake:blob=fake_default_http:tcp_md5:repeats=6",
+        "--lua-desync=multisplit:pos=method+2,midsld"
+      ]
+    },
+    {
+      "id": "syndata_multisplit",
+      "name": "Данные в SYN + разрезание",
+      "description": "Подмена на этапе установки TCP-соединения (syndata) и мелкая нарезка SNI. Помогает при жёстком анализе начала сессии.",
+      "tls": [
+        "--payload=tls_client_hello",
+        "--lua-desync=syndata:blob=tls_google:tls_mod=rnd",
+        "--lua-desync=multisplit:pos=1,sniext+1,midsld"
+      ],
+      "http": [
+        "--payload=http_req",
         "--lua-desync=multisplit:pos=method+2,midsld"
       ]
     },

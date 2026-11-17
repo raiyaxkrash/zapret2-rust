@@ -50,6 +50,8 @@ pub struct TestReport {
     pub best: Option<String>,
     /// Лучшая стратегия для YouTube.
     pub best_youtube: Option<String>,
+    /// Рекомендуется выключить QUIC (проверка без QUIC дала лучший результат для YouTube).
+    pub recommend_quic_off: bool,
     pub cancelled: bool,
     /// Проверялся конкретный сайт (а не набор сервисов).
     pub site: Option<String>,
@@ -72,6 +74,7 @@ pub fn targets(settings: &Settings, state: &AppState) -> Vec<(String, String)> {
         add("youtube", "https://www.youtube.com/");
         add("youtube", "https://i.ytimg.com/vi/jNQXAC9IVRw/maxresdefault.jpg");
         add("youtube", "https://redirector.googlevideo.com/report_mapping");
+        add("youtube", "https://redirector.googlevideo.com/?c=WEB");
         add("youtube", "https://yt3.ggpht.com/favicon.ico");
     }
     if settings.discord || (!settings.youtube && !custom_only) {
@@ -95,20 +98,30 @@ pub fn targets(settings: &Settings, state: &AppState) -> Vec<(String, String)> {
     t
 }
 
+fn http_client() -> Result<&'static reqwest::Client, String> {
+    static CLIENT: std::sync::OnceLock<Result<reqwest::Client, String>> = std::sync::OnceLock::new();
+    CLIENT
+        .get_or_init(|| {
+            reqwest::Client::builder()
+                .no_proxy()
+                .connect_timeout(Duration::from_secs(5))
+                .timeout(Duration::from_secs(9))
+                .pool_max_idle_per_host(0)
+                .redirect(reqwest::redirect::Policy::limited(3))
+                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36")
+                .build()
+                .map_err(|e| e.to_string())
+        })
+        .as_ref()
+        .map_err(Clone::clone)
+}
+
 pub(crate) async fn check(service: String, url: String) -> CheckResult {
     let started = Instant::now();
     let fail = |url: String, service: String, ms: u64, bytes: usize, e: String| CheckResult { url, service, ok: false, ms, bytes, error: Some(e) };
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .connect_timeout(Duration::from_secs(5))
-        .timeout(Duration::from_secs(9))
-        .pool_max_idle_per_host(0)
-        .redirect(reqwest::redirect::Policy::limited(3))
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36")
-        .build();
-    let client = match client {
+    let client = match http_client() {
         Ok(c) => c,
-        Err(e) => return fail(url, service, 0, 0, e.to_string()),
+        Err(e) => return fail(url, service, 0, 0, e),
     };
     let mut bytes = 0usize;
     let res: Result<(), reqwest::Error> = async {
@@ -219,7 +232,17 @@ async fn run_inner(app: &AppHandle, site: Option<String>) -> Result<TestReport, 
         None => targets(&settings, &state),
     };
     let was_running = state.engine.is_running();
-    let strategies = presets.all(&settings);
+    let def = Settings::default();
+    let custom_untouched = settings.strategy != "custom"
+        && settings.youtube_strategy != "custom"
+        && settings.custom_tls == def.custom_tls
+        && settings.custom_http == def.custom_http
+        && settings.custom_quic == def.custom_quic;
+    let strategies: Vec<_> = presets
+        .all(&settings)
+        .into_iter()
+        .filter(|s| !(s.id == "custom" && custom_untouched))
+        .collect();
     let total = strategies.len() + 1;
 
     state.engine.stop(app);
@@ -260,7 +283,59 @@ async fn run_inner(app: &AppHandle, site: Option<String>) -> Result<TestReport, 
     let has_other = urls.iter().any(|(s, _)| s != "youtube");
     let has_yt = urls.iter().any(|(s, _)| s == "youtube");
     let best = if has_other { pick(&results, |r| r.other_ok) } else { pick(&results, |r| r.ok) };
-    let best_youtube = if has_yt { pick(&results, |r| r.yt_ok) } else { None };
+    let mut best_youtube = if has_yt { pick(&results, |r| r.yt_ok) } else { None };
+    let mut recommend_quic_off = false;
+
+    // Если при включённом QUIC ни одна стратегия не открыла весь YouTube, пробуем 2 лучших кандидата с выключенным QUIC.
+    let yt_total = urls.iter().filter(|(s, _)| s == "youtube").count();
+    let best_yt_score = results.iter().map(|r| r.yt_ok).max().unwrap_or(0);
+    if !cancelled && site.is_none() && settings.quic && has_yt && best_yt_score < yt_total {
+        let mut candidates: Vec<String> = Vec::new();
+        if let Some(id) = &best_youtube {
+            candidates.push(id.clone());
+        }
+        if let Some(id) = &best {
+            if !candidates.contains(id) {
+                candidates.push(id.clone());
+            }
+        }
+        for s in strategies.iter().take(2) {
+            if candidates.len() >= 2 {
+                break;
+            }
+            if !candidates.contains(&s.id) {
+                candidates.push(s.id.clone());
+            }
+        }
+        let mut no_quic_settings = settings.clone();
+        no_quic_settings.quic = false;
+        let yt_urls: Vec<_> = urls.iter().filter(|(s, _)| s == "youtube").cloned().collect();
+        for cid in candidates {
+            if state.cancel_test.load(Ordering::SeqCst) {
+                cancelled = true;
+                break;
+            }
+            let cname = strategies.iter().find(|s| s.id == cid).map(|s| s.name.as_str()).unwrap_or(&cid);
+            let label = format!("{cname} (без QUIC)");
+            let _ = app.emit("test-progress", Progress { index: total, total, current: &label, result: None });
+            if crate::start_with(app, &no_quic_settings, &cid, Some(&cid)).await.is_ok() {
+                let r = run_checks(&cid, cname, &yt_urls).await;
+                state.engine.stop(app);
+                state.engine.log(app, format!("[app] {label}: YouTube {}/{}", r.yt_ok, r.yt_total));
+                if r.yt_ok > best_yt_score {
+                    recommend_quic_off = true;
+                    best_youtube = Some(cid.clone());
+                    if let Some(existing) = results.iter_mut().find(|x| x.id == cid) {
+                        existing.yt_ok = r.yt_ok;
+                        existing.ok = existing.other_ok + r.yt_ok;
+                    }
+                    if r.yt_ok == yt_total {
+                        break;
+                    }
+                }
+            }
+        }
+    }
 
     if was_running {
         let id = saved.strategy.clone();
@@ -270,7 +345,7 @@ async fn run_inner(app: &AppHandle, site: Option<String>) -> Result<TestReport, 
     }
 
     let is_site = site.is_some();
-    let report = TestReport { baseline, results, best, best_youtube, cancelled, site };
+    let report = TestReport { baseline, results, best, best_youtube, recommend_quic_off, cancelled, site };
     // Отчёт о проверке одного сайта не заменяет общий отчёт подбора.
     if !is_site {
         *state.last_report.lock().unwrap() = Some(report.clone());

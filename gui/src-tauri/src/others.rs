@@ -14,13 +14,16 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{paths::Paths, util::hidden_command};
+use crate::{
+    paths::Paths,
+    util::{hidden_command, winreg},
+};
 
 /// Службы, которые ставят другие программы обхода.
 const SERVICES: &[&str] = &["zapret", "GoodbyeDPI"];
 /// Процессы других программ обхода (сравнение без учёта регистра).
 pub const PROCESSES: &[&str] = &["winws.exe", "winws2.exe", "goodbyedpi.exe"];
-const SERVICES_KEY: &str = r"HKLM\SYSTEM\CurrentControlSet\Services";
+const SERVICES_SUBKEY: &str = r"SYSTEM\CurrentControlSet\Services";
 /// Шаблонная строка из пустого списка zapret-discord-youtube.
 const PLACEHOLDER: &str = "domain.example.abc";
 
@@ -48,21 +51,8 @@ pub struct Disabled {
 
 // ---------------------------------------------------------------- реестр и процессы
 
-/// Значение из реестра целиком (пути с пробелами не обрезаются).
-fn reg_value(key: &str, value: &str) -> Option<String> {
-    let out = hidden_command("reg").args(["query", key, "/v", value]).output().ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let text = String::from_utf8_lossy(&out.stdout).to_string();
-    let line = text.lines().find(|l| l.trim_start().to_lowercase().starts_with(&value.to_lowercase()))?;
-    let rest = line.trim_start()[value.len()..].trim_start();
-    let (_, data) = rest.split_once(char::is_whitespace)?;
-    Some(data.trim().to_string())
-}
-
 fn service_exists(name: &str) -> bool {
-    reg_value(&format!(r"{SERVICES_KEY}\{name}"), "ImagePath").is_some()
+    winreg::get_sz(winreg::HKLM, &format!(r"{SERVICES_SUBKEY}\{name}"), "ImagePath").is_some()
 }
 
 /// Путь к программе из строки запуска службы (`"C:\a b\winws.exe" --args` или без кавычек).
@@ -103,13 +93,9 @@ fn args_values(cmd: &str, name: &str) -> Vec<String> {
 
 /// Запущенные процессы других программ: имя и путь к файлу.
 fn processes(own_pid: Option<u32>) -> Vec<(String, u32, Option<PathBuf>)> {
-    let Ok(out) = hidden_command("tasklist").args(["/FO", "CSV", "/NH"]).output() else { return vec![] };
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter_map(|l| {
-            let mut parts = l.split("\",\"");
-            let name = parts.next()?.trim_matches('"').to_string();
-            let pid: u32 = parts.next()?.trim_matches('"').parse().ok()?;
+    crate::util::list_processes()
+        .into_iter()
+        .filter_map(|(name, pid)| {
             (PROCESSES.contains(&name.to_lowercase().as_str()) && Some(pid) != own_pid).then(|| (name, pid, process_path(pid)))
         })
         .collect()
@@ -154,7 +140,9 @@ fn product_of(exe_name: &str, folder: Option<&Path>, service: Option<&str>) -> S
         return "zapret2".into();
     }
     let zdy_folder = folder.map(|f| f.join("service.bat").exists() && f.join("lists").join("list-general.txt").exists()).unwrap_or(false);
-    let zdy_service = service.map(|s| reg_value(&format!(r"{SERVICES_KEY}\{s}"), "zapret-discord-youtube").is_some()).unwrap_or(false);
+    let zdy_service = service
+        .map(|s| winreg::get_sz(winreg::HKLM, &format!(r"{SERVICES_SUBKEY}\{s}"), "zapret-discord-youtube").is_some())
+        .unwrap_or(false);
     if zdy_folder || zdy_service {
         "zapret-discord-youtube".into()
     } else {
@@ -215,13 +203,13 @@ fn find(paths: &Paths, own_pid: Option<u32>) -> Vec<Found> {
     let mut found: Vec<Found> = Vec::new();
     let procs = processes(own_pid);
     for svc in SERVICES {
-        let key = format!(r"{SERVICES_KEY}\{svc}");
-        let Some(cmd) = reg_value(&key, "ImagePath") else { continue };
+        let subkey = format!(r"{SERVICES_SUBKEY}\{svc}");
+        let Some(cmd) = winreg::get_sz(winreg::HKLM, &subkey, "ImagePath") else { continue };
         let exe = exe_from_command(&cmd);
         let folder = exe.as_deref().and_then(folder_of);
         let exe_name = exe.as_ref().and_then(|e| e.file_name()).map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
         let running = procs.iter().any(|(_, _, p)| p.is_some() && p.as_deref() == exe.as_deref());
-        let start: u32 = reg_value(&key, "Start").and_then(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).ok()).unwrap_or(3);
+        let start: u32 = winreg::get_dword(winreg::HKLM, &subkey, "Start").unwrap_or(3);
         found.push(Found {
             other: Other {
                 product: product_of(&exe_name, folder.as_deref(), Some(svc)),

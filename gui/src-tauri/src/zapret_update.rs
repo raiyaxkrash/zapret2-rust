@@ -281,6 +281,7 @@ mod tests {
             resources: root.join("res"),
             remote: root.join("remote"),
             root: root.clone(),
+            portable: false,
         };
         for info in [check(&paths).await.unwrap(), pinned(&paths)] {
             let staging = download(&paths, &info, |_, _| {}).await.unwrap();

@@ -31,8 +31,13 @@ pub struct Settings {
     pub start_minimized: bool,
     pub engine_on_launch: bool,
     pub close_to_tray: bool,
+    /// Глобальная горячая клавиша Ctrl+Shift+Z для переключения обхода.
+    pub hotkey: bool,
     pub debug_log: bool,
-    /// Встроенный WARP для сервисов, которые сами закрыли доступ из региона.
+    /// Встроенная защита от подмены DNS (DNS-over-HTTPS поверх WinDivert).
+    pub dns_doh: bool,
+
+    /// Встроенный WARP для заблокированных по IP сайтов и программ.
     pub warp: bool,
     pub warp_port: u16,
     /// «Мусорные» пакеты перед рукопожатием, чтобы WARP хуже распознавался.
@@ -43,6 +48,11 @@ pub struct Settings {
     pub warp_packs: Vec<String>,
     /// Свои домены через WARP.
     pub warp_custom: Vec<String>,
+    /// Программы (.exe), весь трафик которых направляется в WARP.
+    pub warp_exes: Vec<String>,
+    /// Необязательный ключ подписки 1.1.1.1 WARP+.
+    pub warp_license: String,
+
     /// Сторож: следить, не перестали ли открываться сервисы.
     pub watchdog: bool,
     /// Сторож сам переподбирает стратегию (иначе только предупреждает).
@@ -62,6 +72,8 @@ pub struct Settings {
     /// Язык интерфейса: "auto" | "ru" | "en".
     pub lang: String,
     pub animations: bool,
+    /// Сохранённое положение и размер главного окна: [x, y, width, height].
+    pub window_bounds: Option<[i32; 4]>,
 
     /// Локальный прокси для Telegram Desktop (tg-ws-proxy).
     pub tg_proxy: bool,
@@ -91,13 +103,17 @@ impl Default for Settings {
             start_minimized: true,
             engine_on_launch: true,
             close_to_tray: true,
+            hotkey: false,
             debug_log: false,
+            dns_doh: false,
             warp: false,
             warp_port: crate::warp::DEFAULT_PORT,
             warp_junk: true,
             warp_apps: true,
             warp_packs: vec![],
             warp_custom: Vec::new(),
+            warp_exes: Vec::new(),
+            warp_license: String::new(),
             watchdog: true,
             watchdog_auto: true,
             network_memory: true,
@@ -109,6 +125,7 @@ impl Default for Settings {
             expert: false,
             lang: "auto".into(),
             animations: true,
+            window_bounds: None,
             tg_proxy: false,
             tg_proxy_port: crate::tgproxy::DEFAULT_PORT,
             tg_proxy_secret: String::new(),
@@ -138,6 +155,15 @@ impl Settings {
         if s.tg_proxy_port < 1024 {
             s.tg_proxy_port = crate::tgproxy::DEFAULT_PORT;
         }
+        if s.warp_port < 1024 || s.warp_port == s.tg_proxy_port {
+            s.warp_port = if s.tg_proxy_port == crate::warp::DEFAULT_PORT { 40081 } else { crate::warp::DEFAULT_PORT };
+        }
+        if let Ok(clean) = crate::util::normalize_domain_vec(&s.warp_custom) {
+            s.warp_custom = clean;
+        }
+        if let Ok(clean_exes) = crate::util::normalize_exe_vec(&s.warp_exes) {
+            s.warp_exes = clean_exes;
+        }
         s
     }
 
@@ -158,12 +184,9 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("z2-settings-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("settings.json");
-        // Новая установка: файла нет — простой режим.
         assert!(!Settings::load(&path).expert);
-        // Настройки из прошлой версии без поля expert — режим для опытных.
         fs::write(&path, r#"{"strategy":"seqovl"}"#).unwrap();
         assert!(Settings::load(&path).expert);
-        // Выбор пользователя сохраняется.
         let mut s = Settings::load(&path);
         s.expert = false;
         s.save(&path).unwrap();

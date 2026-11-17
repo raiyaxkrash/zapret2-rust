@@ -102,6 +102,7 @@
                 <path class="t-fill" id="trafFill" d=""/>
                 <path class="t-tx" id="trafTxLine" d=""/>
                 <path class="t-rx" id="trafRxLine" d=""/>
+                <line class="t-cursor" id="trafCursor" x1="0" y1="0" x2="0" y2="140" hidden />
               </svg>
             </div>
           </div>
@@ -139,18 +140,42 @@
           <div class="packs" id="warpPacks"></div>
 
           <h2 class="section-title">Сайты для WARP</h2>
+          <form class="add-site add-warp-site" id="addWarpSite" style="margin:0 0 10px">
+            <span data-icon="globe"></span>
+            <input type="text" placeholder="Добавить сайт в WARP: вставьте ссылку или домен и нажмите Enter" spellcheck="false" />
+            <button class="btn small primary" type="submit">Добавить</button>
+          </form>
           <div class="card editor-card">
-            <div class="editor-hint">По одному домену в строке, поддомены учитываются автоматически.</div>
+            <div class="editor-hint">По одному домену в строке, поддомены учитываются автоматически. Ссылки вида https://… очищаются сами.</div>
             <textarea id="warpCustom" spellcheck="false" style="min-height:110px" placeholder="example.com"></textarea>
             <div class="editor-foot"><span class="muted" id="warpCustomCount"></span><div class="editor-actions"><button class="btn primary" id="warpCustomSave">Сохранить</button></div></div>
+          </div>
+
+          <h2 class="section-title">Программы для WARP</h2>
+          <form class="add-site add-warp-exe" id="addWarpExe" style="margin:0 0 10px">
+            <span data-icon="chip"></span>
+            <input type="text" id="warpExeInput" placeholder="Добавить программу: например, discord.exe или путь к .exe" spellcheck="false" />
+            <div class="select-wrap" style="width:190px"><select id="runningApps"><option value="">Из запущенных…</option></select><span class="select-chev" data-icon="chevron"></span></div>
+            <button class="btn small primary" type="submit">Добавить</button>
+          </form>
+          <div class="card editor-card">
+            <div class="editor-hint">Весь TCP и игровой UDP-трафик этих программ пойдёт через WARP целиком, независимо от списка сайтов.</div>
+            <textarea id="warpExes" spellcheck="false" style="min-height:84px" placeholder="discord.exe"></textarea>
+            <div class="editor-foot"><span class="muted" id="warpExesCount"></span><div class="editor-actions"><button class="btn primary" id="warpExesSave">Сохранить</button></div></div>
           </div>
 
           <h2 class="expert-only section-title">Параметры</h2>
           <div class="expert-only settings-group">
             <label class="setting"><span data-icon="flash"></span><div class="setting-text"><div class="setting-title">Маскировка</div><div class="setting-desc">Программа сама подбирает, как скрыть WARP от провайдера: случайные пакеты, маскировка под DNS или QUIC, и запоминает рабочий способ. Выключайте, только если без маскировки работает лучше</div></div><div class="setting-control"><span class="switch"><input type="checkbox" data-setting="warp_junk" /><i></i></span></div></label>
-            <label class="setting"><span data-icon="chip"></span><div class="setting-text"><div class="setting-title">Для программ</div><div class="setting-desc">Пускать через WARP и программы, которые не используют системный прокси. Работает через драйвер WinDivert из zapret2</div></div><div class="setting-control"><span class="switch"><input type="checkbox" data-setting="warp_apps" /><i></i></span></div></label>
+            <label class="setting"><span data-icon="chip"></span><div class="setting-text"><div class="setting-title">Для программ</div><div class="setting-desc">Пускать через WARP и программы (включая UDP для голоса и игр), которые не используют системный прокси. Работает через драйвер WinDivert из zapret2</div></div><div class="setting-control"><span class="switch"><input type="checkbox" data-setting="warp_apps" /><i></i></span></div></label>
             <div class="setting"><span data-icon="globe"></span><div class="setting-text"><div class="setting-title">Порт локального прокси</div><div class="setting-desc">По умолчанию 40080. Браузеры получают его автоматически через системные настройки прокси</div></div>
               <div class="field-row" style="max-width:220px"><input id="warpPort" type="number" min="1024" max="65535" /><button class="btn" id="saveWarpPort">Сохранить</button></div>
+            </div>
+            <div class="setting"><span data-icon="check"></span><div class="setting-text"><div class="setting-title">Ключ WARP+</div><div class="setting-desc">Лицензионный ключ из мобильного приложения 1.1.1.1 (необязательно)</div></div>
+              <div class="field-row" style="max-width:320px"><input id="warpLicense" type="text" placeholder="xxxxxxxx-xxxx-xxxx-xxxx" spellcheck="false" /><button class="btn" id="saveWarpLicense">Сохранить</button></div>
+            </div>
+            <div class="setting"><span data-icon="refresh"></span><div class="setting-text"><div class="setting-title">Аккаунт WARP</div><div class="setting-desc">Перевыпустить бесплатный ключ WireGuard, если текущий перестал подключаться</div></div>
+              <button class="btn" id="resetWarpAccount">Перевыпустить</button>
             </div>
           </div>
         </section>
@@ -160,7 +185,7 @@
           <div class="page-head">
             <div>
               <h1>Диагностика</h1>
-              <p class="lead">Проверка того, что именно мешает: подмена DNS, блокировка по IP, обрыв соединения или ограничение самого сервиса. Займёт около 20 секунд.</p>
+              <p class="lead">Проверка того, что именно мешает: подмена DNS, блокировка по IP, обрыв соединения или ограничение самого сервиса. Займёт около 10 секунд.</p>
             </div>
             <div class="head-actions">
               <button class="btn" id="diagCopy" hidden><span data-icon="copy"></span>Скопировать отчёт</button>
@@ -296,7 +321,10 @@
             <button class="tab" data-list="discord">Discord</button>
           </div>
           <div class="card editor-card">
-            <div class="editor-hint" id="listHint"></div>
+            <div class="editor-top">
+              <div class="editor-hint" id="listHint"></div>
+              <button class="btn small subtle" id="listBackToUser" hidden>К «Моим сайтам»</button>
+            </div>
             <textarea id="listEditor" spellcheck="false"></textarea>
             <div class="editor-foot">
               <span class="muted" id="listCount"></span>
@@ -319,6 +347,20 @@
               <label class="check"><input type="checkbox" id="autoScroll" checked /> Автопрокрутка</label>
               <button class="btn" id="copyLogs"><span data-icon="copy"></span>Копировать</button>
               <button class="btn" id="clearLogs"><span data-icon="trash"></span>Очистить</button>
+            </div>
+          </div>
+          <div class="log-toolbar">
+            <div class="segmented" id="logFilter">
+              <button class="active" data-filter="all">Все</button>
+              <button data-filter="app">Приложение</button>
+              <button data-filter="winws">winws2</button>
+              <button data-filter="warp">WARP</button>
+              <button data-filter="tg">Telegram</button>
+              <button data-filter="err">Ошибки</button>
+            </div>
+            <div class="log-search">
+              <span data-icon="search"></span>
+              <input type="text" id="logSearch" placeholder="Поиск в журнале…" spellcheck="false" />
             </div>
           </div>
           <pre class="card log" id="log"></pre>
@@ -358,6 +400,7 @@
             <label class="setting"><span data-icon="min"></span><div class="setting-text"><div class="setting-title">Запускать свёрнутым в трей</div><div class="setting-desc">При автозапуске окно не показывается</div></div><div class="setting-control"><span class="state-label"></span><span class="switch"><input type="checkbox" data-setting="start_minimized" /><i></i></span></div></label>
             <label class="setting"><span data-icon="power"></span><div class="setting-text"><div class="setting-title">Включать обход при запуске</div><div class="setting-desc">Сразу после старта программы</div></div><div class="setting-control"><span class="state-label"></span><span class="switch"><input type="checkbox" data-setting="engine_on_launch" /><i></i></span></div></label>
             <label class="setting"><span data-icon="close"></span><div class="setting-text"><div class="setting-title">Сворачивать в трей при закрытии</div><div class="setting-desc">Обход продолжит работать в фоне, управлять им можно из мини-окна в трее</div></div><div class="setting-control"><span class="state-label"></span><span class="switch"><input type="checkbox" data-setting="close_to_tray" /><i></i></span></div></label>
+            <label class="setting"><span data-icon="flash"></span><div class="setting-text"><div class="setting-title">Горячая клавиша Ctrl+Shift+Z</div><div class="setting-desc">Быстро включать и выключать обход поверх любого окна или игры</div></div><div class="setting-control"><span class="state-label"></span><span class="switch"><input type="checkbox" data-setting="hotkey" /><i></i></span></div></label>
           </div>
 
           <h2 class="section-title">Обновления</h2>
@@ -402,11 +445,13 @@
 
           <h2 class="section-title">Дополнительно</h2>
           <div class="settings-group">
+            <label class="setting"><span data-icon="globe"></span><div class="setting-text"><div class="setting-title">Защита DNS (DNS-over-HTTPS)</div><div class="setting-desc">Шифрует DNS-запросы через 1.1.1.1 и 8.8.8.8, если провайдер подменяет адреса сайтов</div></div><div class="setting-control"><span class="state-label"></span><span class="switch"><input type="checkbox" data-setting="dns_doh" /><i></i></span></div></label>
             <label class="expert-only setting"><span data-icon="terminal"></span><div class="setting-text"><div class="setting-title">Подробный журнал</div><div class="setting-desc">winws2 будет писать отладочный вывод (--debug). Немного нагружает процессор</div></div><div class="setting-control"><span class="state-label"></span><span class="switch"><input type="checkbox" data-setting="debug_log" /><i></i></span></div></label>
             <div class="expert-only setting"><span data-icon="download"></span><div class="setting-text"><div class="setting-title">Источник обновлений приложения</div><div class="setting-desc">Адрес файла latest.json</div></div>
               <div class="field-row" style="max-width:460px"><input id="updateUrl" type="url" /><button class="btn" id="saveUpdateUrl">Сохранить</button></div>
             </div>
             <div class="setting" id="othersRow" hidden><span data-icon="power"></span><div class="setting-text"><div class="setting-title">Другие программы обхода</div><div class="setting-desc" id="othersDesc"></div></div><div class="field-row" id="othersActions"></div></div>
+            <div class="setting"><span data-icon="download"></span><div class="setting-text"><div class="setting-title">Резервная копия</div><div class="setting-desc">Сохранить настройки и списки сайтов в файл или восстановить их</div></div><div class="field-row" style="width:auto"><button class="btn" id="exportBackup">Экспорт</button><button class="btn" id="importBackup">Импорт</button><input type="file" id="importBackupFile" accept=".json,application/json" hidden /></div></div>
             <div class="setting"><span data-icon="wand"></span><div class="setting-text"><div class="setting-title">Мастер настройки</div><div class="setting-desc">Заново выбрать, что не открывается, и подобрать стратегию</div></div><button class="btn" id="openWizard">Открыть</button></div>
             <div class="setting"><span data-icon="folder"></span><div class="setting-text"><div class="setting-title">Папка с данными</div><div class="setting-desc" id="dataDir"></div></div><button class="btn" id="openDataDir">Открыть</button></div>
             <div class="setting"><span data-icon="send"></span><div class="setting-text"><div class="setting-title">Telegram-канал</div><div class="setting-desc">Новости, новые версии и ответы на вопросы — t.me/raygit</div></div><button class="btn" data-url="https://t.me/raygit">Открыть</button></div>

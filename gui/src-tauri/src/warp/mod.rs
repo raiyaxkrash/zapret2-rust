@@ -45,6 +45,7 @@ pub struct Warp {
     inner: Mutex<Inner>,
     tunnel: Shared,
     domains: proxy::Domains,
+    exes: apps::Exes,
     /// Способ подключения, которым сейчас работает туннель.
     route: Arc<Mutex<Option<tunnel::Route>>>,
 }
@@ -61,6 +62,7 @@ pub struct WarpStatus {
     pub rx: u64,
     pub tx: u64,
     pub domains: usize,
+    pub exes: usize,
     /// Работает перехват для программ.
     pub apps: bool,
     /// Маскировка, которую подобрала программа: "dns", "quic", "junk" или "plain".
@@ -116,6 +118,18 @@ pub fn reset_route(root: &Path) {
     let _ = fs::remove_file(route_file(root));
 }
 
+/// Перевыпустить бесплатный аккаунт WARP (удаляет сохранённые ключи и маршрут).
+pub fn reset_account(root: &Path) {
+    let _ = fs::remove_file(account_file(root));
+    reset_route(root);
+}
+
+/// Привязать ключ WARP+ к текущему или новому аккаунту.
+pub async fn apply_license(root: &Path, license: &str) -> Result<(), String> {
+    let acc = account(root).await?;
+    api::bind_license(&acc, license).await
+}
+
 fn log(app: &AppHandle, line: impl AsRef<str>) {
     app.state::<AppState>().engine.log(app, format!("[warp] {}", line.as_ref()));
 }
@@ -135,6 +149,7 @@ impl Warp {
             rx: t.as_ref().map(|t| t.stats.rx.load(Ordering::Relaxed)).unwrap_or(0),
             tx: t.as_ref().map(|t| t.stats.tx.load(Ordering::Relaxed)).unwrap_or(0),
             domains: self.domains.read().unwrap().len(),
+            exes: self.exes.read().unwrap().len(),
             apps: running && g.apps.is_some(),
             mask: if running { self.route.lock().unwrap().as_ref().map(|r| r.mask) } else { None },
         }
@@ -149,9 +164,10 @@ impl Warp {
         format!("http://127.0.0.1:{port}/proxy.pac?v={}", now_unix())
     }
 
-    /// Обновляет список доменов на лету (без переподключения туннеля).
-    pub fn set_domains(&self, domains: Vec<String>) {
+    /// Обновляет список доменов и программ на лету (без переподключения туннеля).
+    pub fn set_targets(&self, domains: Vec<String>, exes: Vec<String>) {
         *self.domains.write().unwrap() = domains;
+        *self.exes.write().unwrap() = exes;
         let g = self.inner.lock().unwrap();
         if g.task.as_ref().map(|t| !t.is_finished()).unwrap_or(false) {
             let _ = sysproxy::set(&Self::pac_url(g.port));
@@ -163,9 +179,10 @@ impl Warp {
 
     /// `apps` — папка с WinDivert (zapret2), если нужен WARP для программ.
     /// `auto` — подбирать маскировку (настройка «Маскировка»).
-    pub async fn start(&self, app: &AppHandle, root: &Path, port: u16, auto: bool, domains: Vec<String>, apps: Option<PathBuf>) -> Result<(), String> {
+    #[allow(clippy::too_many_arguments)]
+    pub async fn start(&self, app: &AppHandle, root: &Path, port: u16, auto: bool, domains: Vec<String>, exes: Vec<String>, apps: Option<PathBuf>) -> Result<(), String> {
         self.stop(app);
-        let r = self.spawn(app, root, port, auto, domains, apps).await;
+        let r = self.spawn(app, root, port, auto, domains, exes, apps).await;
         if let Err(e) = &r {
             log(app, e);
             self.inner.lock().unwrap().last_error = Some(e.clone());
@@ -174,7 +191,8 @@ impl Warp {
         r
     }
 
-    async fn spawn(&self, app: &AppHandle, root: &Path, port: u16, auto: bool, domains: Vec<String>, apps: Option<PathBuf>) -> Result<(), String> {
+    #[allow(clippy::too_many_arguments)]
+    async fn spawn(&self, app: &AppHandle, root: &Path, port: u16, auto: bool, domains: Vec<String>, exes: Vec<String>, apps: Option<PathBuf>) -> Result<(), String> {
         let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port))
             .await
             .map_err(|e| format!("Порт {port} для WARP занят другой программой ({e})"))?;
@@ -186,6 +204,7 @@ impl Warp {
         *self.route.lock().unwrap() = Some(route);
         *self.tunnel.write().unwrap() = Some(t);
         *self.domains.write().unwrap() = domains;
+        *self.exes.write().unwrap() = exes;
 
         let shared = self.tunnel.clone();
         let doms = self.domains.clone();
@@ -218,7 +237,9 @@ impl Warp {
                         Ok((t, route)) => {
                             save_route(&data_root, &route);
                             *current_route.lock().unwrap() = Some(route);
-                            *shared.write().unwrap() = Some(t);
+                            if let Some(old) = shared.write().unwrap().replace(t) {
+                                old.close();
+                            }
                         }
                         Err(e) => log(&h, e),
                     }
@@ -233,12 +254,14 @@ impl Warp {
 
         if let Err(e) = sysproxy::enable(root, &Self::pac_url(port)) {
             task.abort();
-            *self.tunnel.write().unwrap() = None;
+            if let Some(old) = self.tunnel.write().unwrap().take() {
+                old.close();
+            }
             return Err(e);
         }
         let redirector = apps.and_then(|bin| {
             let h = app.clone();
-            match apps::Redirector::start(&bin, self.tunnel.clone(), self.domains.clone(), move |l| log(&h, l)) {
+            match apps::Redirector::start(&bin, self.tunnel.clone(), self.domains.clone(), self.exes.clone(), move |l| log(&h, l)) {
                 Ok(r) => {
                     log(app, "WARP для программ включён");
                     Some(r)
@@ -271,7 +294,9 @@ impl Warp {
             }
             (g.task.take().map(|t| t.abort()).is_some(), g.root.take())
         };
-        *self.tunnel.write().unwrap() = None;
+        if let Some(old) = self.tunnel.write().unwrap().take() {
+            old.close();
+        }
         if had {
             if let Some(root) = previous {
                 sysproxy::disable(&root);
@@ -399,7 +424,7 @@ mod tests {
         let shared: Shared = Arc::new(RwLock::new(Some(t)));
         let domains: proxy::Domains = Arc::new(RwLock::new(vec!["cloudflare.com".into()]));
         let bin = PathBuf::from(std::env::var("LOCALAPPDATA").unwrap()).join("Zapret2GUI").join("engine").join("bin");
-        let r = apps::Redirector::start(&bin, shared, domains, |l| println!("{l}")).expect("WinDivert: нужны права администратора");
+        let r = apps::Redirector::start(&bin, shared, domains, Arc::default(), |l| println!("{l}")).expect("WinDivert: нужны права администратора");
         tokio::time::sleep(Duration::from_secs(3)).await;
 
         let via = tokio::task::spawn_blocking(move || {

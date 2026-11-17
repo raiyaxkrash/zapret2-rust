@@ -30,7 +30,7 @@ body { height: 100vh; background: var(--bg); }
 
 .fly-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .14em; color: var(--text-3); margin: 16px 0 8px; }
 
-.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .tile { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 0 8px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel); color: var(--text-2); font-size: 11.5px; transition: border-color .12s, color .12s; }
 .tile > .ico { width: 18px; height: 18px; }
 .tile:hover { border-color: var(--line-2); color: var(--text); }

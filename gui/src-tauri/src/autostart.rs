@@ -1,17 +1,24 @@
 //! Автозапуск через Планировщик заданий: обычный автозапуск (реестр Run)
 //! не умеет запускать программы с правами администратора без запроса UAC.
 
-use std::fs;
+use std::{
+    fs,
+    sync::Mutex,
+    time::{Duration, Instant},
+};
 
 use crate::util::hidden_command;
 
 pub const TASK_NAME: &str = "Zapret2 GUI";
+const CACHE_TTL: Duration = Duration::from_secs(30);
+
+static CACHE: Mutex<Option<(bool, Instant)>> = Mutex::new(None);
 
 fn xml_escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
-pub fn is_enabled() -> bool {
+fn query_task() -> bool {
     hidden_command("schtasks")
         .args(["/Query", "/TN", TASK_NAME])
         .output()
@@ -19,9 +26,20 @@ pub fn is_enabled() -> bool {
         .unwrap_or(false)
 }
 
+pub fn is_enabled() -> bool {
+    if let Some((val, at)) = *CACHE.lock().unwrap() {
+        if at.elapsed() < CACHE_TTL {
+            return val;
+        }
+    }
+    let val = query_task();
+    *CACHE.lock().unwrap() = Some((val, Instant::now()));
+    val
+}
+
 pub fn set(enabled: bool) -> Result<(), String> {
     if !enabled {
-        if is_enabled() {
+        if query_task() {
             let out = hidden_command("schtasks")
                 .args(["/Delete", "/TN", TASK_NAME, "/F"])
                 .output()
@@ -30,6 +48,7 @@ pub fn set(enabled: bool) -> Result<(), String> {
                 return Err("Не удалось удалить задание автозапуска".into());
             }
         }
+        *CACHE.lock().unwrap() = Some((false, Instant::now()));
         return Ok(());
     }
 
@@ -104,5 +123,6 @@ pub fn set(enabled: bool) -> Result<(), String> {
             String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
+    *CACHE.lock().unwrap() = Some((true, Instant::now()));
     Ok(())
 }

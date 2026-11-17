@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 use serde::Serialize;
 use tauri::{Manager, Runtime, Theme, WebviewWindow};
 
-use crate::util::hidden_command;
+use crate::util::{hidden_command, winreg};
 
 #[derive(Serialize, Clone, Debug)]
 pub struct Accent {
@@ -33,10 +33,14 @@ pub struct Platform {
 pub fn is_arm64() -> bool {
     static V: OnceLock<bool> = OnceLock::new();
     *V.get_or_init(|| {
-        // Переменная процесса под эмуляцией показывает AMD64, поэтому берём системную.
-        reg_value(r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment", "PROCESSOR_ARCHITECTURE")
-            .map(|v| v.eq_ignore_ascii_case("ARM64"))
-            .unwrap_or(false)
+        // Переменная процесса под эмуляцией показывает AMD64, поэтому берём системную напрямую из реестра.
+        winreg::get_sz(
+            winreg::HKLM,
+            r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+            "PROCESSOR_ARCHITECTURE",
+        )
+        .map(|v| v.eq_ignore_ascii_case("ARM64"))
+        .unwrap_or(false)
     })
 }
 
@@ -51,8 +55,8 @@ pub fn testsigning_enabled() -> bool {
 }
 
 pub fn secure_boot_enabled() -> bool {
-    reg_value(r"HKLM\SYSTEM\CurrentControlSet\Control\SecureBoot\State", "UEFISecureBootEnabled")
-        .map(|v| v.trim_start_matches("0x") == "1")
+    winreg::get_dword(winreg::HKLM, r"SYSTEM\CurrentControlSet\Control\SecureBoot\State", "UEFISecureBootEnabled")
+        .map(|v| v == 1)
         .unwrap_or(false)
 }
 
@@ -74,27 +78,21 @@ pub fn enable_testsigning() -> Result<(), String> {
     Ok(())
 }
 
-fn reg_value(key: &str, value: &str) -> Option<String> {
-    let out = hidden_command("reg").args(["query", key, "/v", value]).output().ok()?;
-    let text = String::from_utf8_lossy(&out.stdout).to_string();
-    text.lines()
-        .find(|l| l.trim_start().starts_with(value))
-        .and_then(|l| l.split_whitespace().last())
-        .map(str::to_string)
-}
-
 fn read_build() -> u32 {
-    reg_value(r"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion", "CurrentBuildNumber")
+    winreg::get_sz(winreg::HKLM, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion", "CurrentBuildNumber")
         .and_then(|s| s.parse().ok())
         .unwrap_or(0)
 }
 
 fn read_accent() -> Accent {
     let fallback = Accent { dark_theme: "#4cc2ff".into(), light_theme: "#005fb8".into() };
-    let Some(hexstr) = reg_value(r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Accent", "AccentPalette") else {
+    let Some(bytes) = winreg::get_binary(
+        winreg::HKCU,
+        r"Software\Microsoft\Windows\CurrentVersion\Explorer\Accent",
+        "AccentPalette",
+    ) else {
         return fallback;
     };
-    let Ok(bytes) = hex::decode(hexstr.trim()) else { return fallback };
     if bytes.len() < 32 {
         return fallback;
     }
@@ -112,7 +110,6 @@ pub fn info() -> Platform {
         mica: build >= 22000,
         accent,
         arm64,
-        // bcdedit и реестр опрашиваем только на ARM64: на остальных это не нужно.
         testsigning: arm64 && testsigning_enabled(),
         secure_boot: arm64 && secure_boot_enabled(),
         lang: system_lang(),
@@ -138,7 +135,7 @@ pub fn is_english(lang: &str) -> bool {
     }
 }
 
-/// Применяет тему ("system" | "light" | "dark") и подложку Mica ко всем окнам.
+/// Применяет тему ("system" | "light" | "dark") ко всем окнам.
 pub fn apply_theme<R: Runtime, M: Manager<R>>(app: &M, theme: &str) {
     let t = match theme {
         "light" => Some(Theme::Light),
