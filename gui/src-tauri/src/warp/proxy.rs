@@ -21,14 +21,13 @@ const HEADER_LIMIT: usize = 16 * 1024;
 pub type Domains = Arc<RwLock<Vec<String>>>;
 
 pub fn pac(domains: &[String], port: u16) -> String {
-    let list: Vec<String> = domains.iter().map(|d| format!("\"{}\"", d.replace('"', ""))).collect();
+    let list = serde_json::to_string(domains).unwrap_or_else(|_| "[]".into());
     format!(
-        "function FindProxyForURL(url, host) {{\n  host = host.toLowerCase();\n  var d = [{}];\n  for (var i = 0; i < d.length; i++) {{\n    if (host == d[i] || dnsDomainIs(host, \".\" + d[i])) return \"PROXY 127.0.0.1:{port}\";\n  }}\n  return \"DIRECT\";\n}}\n",
-        list.join(", ")
+        "function FindProxyForURL(url, host) {{\n  host = host.toLowerCase();\n  var d = {list};\n  for (var i = 0; i < d.length; i++) {{\n    if (host == d[i] || dnsDomainIs(host, \".\" + d[i])) return \"PROXY 127.0.0.1:{port}\";\n  }}\n  return \"DIRECT\";\n}}\n"
     )
 }
 
-/// Адрес назначения: через системный DNS, а если он подменён — через DNS-over-HTTPS (Cloudflare / Google).
+/// Адрес назначения: через системный DNS, а если он подменён — через DNS-over-HTTPS напрямую по IP (1.1.1.1 / 8.8.8.8).
 async fn resolve(host: &str, port: u16) -> Result<SocketAddrV4, String> {
     if let Ok(ip) = host.parse::<Ipv4Addr>() {
         return Ok(SocketAddrV4::new(ip, port));
@@ -40,22 +39,8 @@ async fn resolve(host: &str, port: u16) -> Result<SocketAddrV4, String> {
     if let Some(ip) = sys.iter().find(|ip| !(ip.is_private() || ip.is_loopback() || ip.is_unspecified() || ip.is_link_local())) {
         return Ok(SocketAddrV4::new(*ip, port));
     }
-    static DOH_CLIENT: std::sync::OnceLock<Option<reqwest::Client>> = std::sync::OnceLock::new();
-    let c = DOH_CLIENT
-        .get_or_init(|| reqwest::Client::builder().timeout(Duration::from_secs(6)).build().ok())
-        .as_ref()
-        .ok_or_else(|| "Не удалось создать HTTP-клиент DoH".to_string())?;
-
-    for url in [
-        format!("https://cloudflare-dns.com/dns-query?name={host}&type=A"),
-        format!("https://dns.google/resolve?name={host}&type=A"),
-    ] {
-        let Ok(resp) = c.get(&url).header("accept", "application/dns-json").send().await else { continue };
-        let Ok(v) = resp.json::<serde_json::Value>().await else { continue };
-        if let Some(ip) = v["Answer"]
-            .as_array()
-            .and_then(|a| a.iter().filter(|r| r["type"] == 1).find_map(|r| r["data"].as_str()?.parse::<Ipv4Addr>().ok()))
-        {
+    if let Some(ips) = crate::dns_guard::resolve_doh_a(host).await {
+        if let Some(IpAddr::V4(ip)) = ips.into_iter().next() {
             return Ok(SocketAddrV4::new(ip, port));
         }
     }
@@ -295,14 +280,22 @@ mod tests {
     #[test]
     fn pac_routes_only_listed() {
         let p = pac(&["chatgpt.com".into(), "openai.com".into()], 40080);
-        assert!(p.contains("\"chatgpt.com\", \"openai.com\""));
+        assert!(p.contains("[\"chatgpt.com\",\"openai.com\"]"));
         assert!(p.contains("\"PROXY 127.0.0.1:40080\""));
         assert!(p.contains("return \"DIRECT\""));
+    }
+
+    #[test]
+    fn pac_escapes_special_chars() {
+        let p = pac(&["bad\\\"name\n.com".into()], 40080);
+        assert!(!p.contains("bad\\\"name\n"));
+        assert!(p.contains("bad\\\\\\\"name\\n.com"));
     }
 
     #[test]
     fn host_port() {
         assert_eq!(split_host_port("chatgpt.com:443", 80), ("chatgpt.com".into(), 443));
         assert_eq!(split_host_port("example.com", 80), ("example.com".into(), 80));
+        assert_eq!(split_host_port("[::1]:8443", 443), ("::1".into(), 8443));
     }
 }

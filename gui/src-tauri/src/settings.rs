@@ -6,6 +6,17 @@ use serde::{Deserialize, Serialize};
 /// Его можно переопределить в настройках.
 pub const DEFAULT_APP_UPDATE_URL: &str = "https://github.com/raiyaxkrash/zapret2-rust/releases/latest/download/latest.json";
 
+/// Сохранённая пользователем именованная стратегия обхода.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct CustomStrategy {
+    pub id: String,
+    pub name: String,
+    pub tls: String,
+    pub http: String,
+    #[serde(default)]
+    pub quic: String,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct Settings {
@@ -36,6 +47,10 @@ pub struct Settings {
     pub debug_log: bool,
     /// Встроенная защита от подмены DNS (DNS-over-HTTPS поверх WinDivert).
     pub dns_doh: bool,
+    /// Провайдер DoH: "auto" | "cloudflare" | "google" | "quad9" | "adguard" | "custom".
+    pub doh_provider: String,
+    /// Пользовательский URL DoH (для doh_provider == "custom").
+    pub doh_custom_url: String,
 
     /// Встроенный WARP для заблокированных по IP сайтов и программ.
     pub warp: bool,
@@ -84,6 +99,8 @@ pub struct Settings {
     pub custom_tls: String,
     pub custom_http: String,
     pub custom_quic: String,
+    /// Сохранённые пользовательские стратегии (именованные пресеты).
+    pub custom_strategies: Vec<CustomStrategy>,
 }
 
 impl Default for Settings {
@@ -106,6 +123,8 @@ impl Default for Settings {
             hotkey: false,
             debug_log: false,
             dns_doh: false,
+            doh_provider: "auto".into(),
+            doh_custom_url: String::new(),
             warp: false,
             warp_port: crate::warp::DEFAULT_PORT,
             warp_junk: true,
@@ -132,6 +151,7 @@ impl Default for Settings {
             custom_tls: "--payload=tls_client_hello --lua-desync=fake:blob=tls_google:tcp_md5:repeats=6 --lua-desync=multisplit:pos=1,midsld".into(),
             custom_http: "--payload=http_req --lua-desync=fake:blob=fake_default_http:tcp_md5:repeats=6 --lua-desync=multisplit:pos=method+2".into(),
             custom_quic: "--payload=quic_initial --lua-desync=fake:blob=quic_google:repeats=6".into(),
+            custom_strategies: Vec::new(),
         }
     }
 }

@@ -96,9 +96,20 @@ impl Presets {
         }
     }
 
-    /// Все стратегии, включая пользовательскую.
+    /// Все стратегии, включая сохранённые пользовательские и слот ручных параметров.
     pub fn all(&self, settings: &Settings) -> Vec<Strategy> {
         let mut v = self.strategies.clone();
+        for cs in &settings.custom_strategies {
+            let quic = split_args(&cs.quic);
+            v.push(Strategy {
+                id: cs.id.clone(),
+                name: cs.name.clone(),
+                description: "Сохранённая пользовательская стратегия.".into(),
+                tls: split_args(&cs.tls),
+                http: split_args(&cs.http),
+                quic: if quic.is_empty() { None } else { Some(quic) },
+            });
+        }
         v.push(Self::custom(settings));
         v
     }

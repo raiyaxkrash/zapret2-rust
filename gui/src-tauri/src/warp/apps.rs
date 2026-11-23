@@ -4,9 +4,7 @@
 
 use std::{
     collections::HashMap,
-    ffi::c_void,
     net::{Ipv4Addr, Ipv6Addr},
-    os::windows::ffi::OsStrExt,
     path::Path,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -15,118 +13,18 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::windivert::{
+    fold, sum16, Addr, Dll, HandleGuard as H, ADDR_CHECKSUMS_OK, ADDR_IPV6, ADDR_LOOPBACK, ADDR_OUTBOUND, FLAG_DIVERT,
+    FLAG_SEND_ONLY, FLAG_SNIFF_RECV_ONLY, LAYER_SOCKET, PRIORITY_WARP_APPS as PRIORITY,
+};
+
 use super::{proxy::Domains, tunnel::Tunnel, Shared};
 
 pub type Exes = Arc<RwLock<Vec<String>>>;
 
-const PRIORITY: i16 = 1000;
-const LAYER_NETWORK: i32 = 0;
-const LAYER_SOCKET: i32 = 3;
-const FLAG_DIVERT: u64 = 0;
-const FLAG_SNIFF_RECV_ONLY: u64 = 1 | 4;
-const FLAG_SEND_ONLY: u64 = 0x8;
-const SHUTDOWN_BOTH: i32 = 3;
 const MSS: u16 = 1200;
 const FILTER_BUDGET: usize = 200;
 const FLOW_IDLE: Duration = Duration::from_secs(600);
-
-// ---------------------------------------------------------------- WinDivert.dll
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct Addr {
-    timestamp: i64,
-    flags: u32,
-    reserved: u32,
-    if_idx: u32,
-    sub_if_idx: u32,
-    rest: [u8; 56],
-}
-
-const ADDR_OUTBOUND: u32 = 1 << 17;
-const ADDR_LOOPBACK: u32 = 1 << 18;
-const ADDR_IPV6: u32 = 1 << 20;
-const ADDR_CHECKSUMS_OK: u32 = (1 << 21) | (1 << 22) | (1 << 23);
-
-type Handle = *mut c_void;
-type Proc = unsafe extern "system" fn() -> isize;
-type OpenFn = unsafe extern "C" fn(*const u8, i32, i16, u64) -> Handle;
-type RecvFn = unsafe extern "C" fn(Handle, *mut u8, u32, *mut u32, *mut Addr) -> i32;
-type SendFn = unsafe extern "C" fn(Handle, *const u8, u32, *mut u32, *const Addr) -> i32;
-type CloseFn = unsafe extern "C" fn(Handle) -> i32;
-type ShutdownFn = unsafe extern "C" fn(Handle, i32) -> i32;
-
-struct Dll {
-    open: OpenFn,
-    recv: RecvFn,
-    send: SendFn,
-    close: CloseFn,
-    shutdown: ShutdownFn,
-}
-
-impl Dll {
-    fn load(path: &Path) -> Result<Dll, String> {
-        use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
-        let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-        let lib = unsafe { LoadLibraryW(wide.as_ptr()) };
-        if lib.is_null() {
-            return Err(format!("Не удалось загрузить {}", path.display()));
-        }
-        let sym = |name: &[u8]| {
-            unsafe { GetProcAddress(lib, name.as_ptr()) }.ok_or_else(|| "WinDivert.dll: нет нужной функции".to_string())
-        };
-        unsafe {
-            Ok(Dll {
-                open: std::mem::transmute::<Proc, OpenFn>(sym(b"WinDivertOpen\0")?),
-                recv: std::mem::transmute::<Proc, RecvFn>(sym(b"WinDivertRecv\0")?),
-                send: std::mem::transmute::<Proc, SendFn>(sym(b"WinDivertSend\0")?),
-                close: std::mem::transmute::<Proc, CloseFn>(sym(b"WinDivertClose\0")?),
-                shutdown: std::mem::transmute::<Proc, ShutdownFn>(sym(b"WinDivertShutdown\0")?),
-            })
-        }
-    }
-
-    fn open_layer(&self, filter: &str, layer: i32, priority: i16, flags: u64) -> Result<H, String> {
-        let c = format!("{filter}\0");
-        let h = unsafe { (self.open)(c.as_ptr(), layer, priority, flags) };
-        if h.is_null() || h as isize == -1 {
-            return Err(format!("WinDivert: ошибка {}", std::io::Error::last_os_error()));
-        }
-        Ok(H { h, close: self.close })
-    }
-
-    fn open(&self, filter: &str, priority: i16, flags: u64) -> Result<H, String> {
-        self.open_layer(filter, LAYER_NETWORK, priority, flags)
-    }
-
-    fn recv(&self, h: &H, buf: &mut [u8], addr: &mut Addr) -> Option<usize> {
-        let mut n = 0u32;
-        let ok = unsafe { (self.recv)(h.h, buf.as_mut_ptr(), buf.len() as u32, &mut n, addr) };
-        (ok != 0).then_some(n as usize)
-    }
-
-    fn send(&self, h: &H, pkt: &[u8], addr: &Addr) -> bool {
-        let mut n = 0u32;
-        unsafe { (self.send)(h.h, pkt.as_ptr(), pkt.len() as u32, &mut n, addr) != 0 }
-    }
-
-    fn shutdown(&self, h: &H) {
-        unsafe { (self.shutdown)(h.h, SHUTDOWN_BOTH) };
-    }
-}
-
-struct H {
-    h: Handle,
-    close: CloseFn,
-}
-
-impl Drop for H {
-    fn drop(&mut self) {
-        unsafe { (self.close)(self.h) };
-    }
-}
-unsafe impl Send for H {}
-unsafe impl Sync for H {}
 
 // ---------------------------------------------------------------- пакеты
 
@@ -139,24 +37,6 @@ fn ipv4(p: &[u8]) -> Option<(usize, u8, Ipv4Addr, Ipv4Addr)> {
         return None;
     }
     Some((ihl, p[9], Ipv4Addr::new(p[12], p[13], p[14], p[15]), Ipv4Addr::new(p[16], p[17], p[18], p[19])))
-}
-
-fn sum16(data: &[u8], mut acc: u32) -> u32 {
-    let (pairs, rest) = data.as_chunks::<2>();
-    for c in pairs {
-        acc += u16::from_be_bytes(*c) as u32;
-    }
-    if let [b] = rest {
-        acc += (*b as u32) << 8;
-    }
-    acc
-}
-
-fn fold(mut acc: u32) -> u16 {
-    while acc >> 16 != 0 {
-        acc = (acc & 0xffff) + (acc >> 16);
-    }
-    !(acc as u16)
 }
 
 fn fix_checksums(p: &mut [u8]) {
@@ -337,7 +217,7 @@ impl IpSet {
     }
 }
 
-fn build_filter(set: &IpSet, exclude: Option<Ipv4Addr>) -> Option<String> {
+fn build_filter(set: &IpSet, exclude: Option<Ipv4Addr>) -> (Option<String>, usize) {
     let mut groups: Vec<([u8; 3], Vec<Ipv4Addr>)> = Vec::new();
     for a in set.v4.iter().rev() {
         let k = [a.octets()[0], a.octets()[1], a.octets()[2]];
@@ -348,6 +228,7 @@ fn build_filter(set: &IpSet, exclude: Option<Ipv4Addr>) -> Option<String> {
     }
     let mut budget = FILTER_BUDGET;
     let mut v4 = Vec::new();
+    let mut truncated = 0usize;
     for (k, ips) in groups {
         let term = if ips.len() > 1 {
             format!("(ip.DstAddr >= {}.{}.{}.0 and ip.DstAddr <= {}.{}.{}.255)", k[0], k[1], k[2], k[0], k[1], k[2])
@@ -356,14 +237,19 @@ fn build_filter(set: &IpSet, exclude: Option<Ipv4Addr>) -> Option<String> {
         };
         let cost = if ips.len() > 1 { 2 } else { 1 };
         if cost > budget {
-            break;
+            truncated += ips.len();
+            continue;
         }
         budget -= cost;
         v4.push(term);
     }
-    let v6: Vec<String> = set.v6.iter().rev().take(budget.min(40)).map(|a| format!("ipv6.DstAddr == {a}")).collect();
+    let v6_limit = budget.min(40);
+    if set.v6.len() > v6_limit {
+        truncated += set.v6.len() - v6_limit;
+    }
+    let v6: Vec<String> = set.v6.iter().rev().take(v6_limit).map(|a| format!("ipv6.DstAddr == {a}")).collect();
     if v4.is_empty() && v6.is_empty() {
-        return None;
+        return (None, 0);
     }
     let mut parts = Vec::new();
     if !v4.is_empty() {
@@ -373,7 +259,7 @@ fn build_filter(set: &IpSet, exclude: Option<Ipv4Addr>) -> Option<String> {
     if !v6.is_empty() {
         parts.push(format!("(ipv6 and (tcp or udp) and ({}))", v6.join(" or ")));
     }
-    Some(format!("outbound and !loopback and ({})", parts.join(" or ")))
+    (Some(format!("outbound and !loopback and ({})", parts.join(" or "))), truncated)
 }
 
 // ---------------------------------------------------------------- перенаправление
@@ -415,10 +301,10 @@ impl Redirector {
             return Err("WARP для программ: zapret2 ещё не загружен".into());
         }
         let dll = Dll::load(&dll_path)?;
-        let send = dll.open("false", PRIORITY, FLAG_SEND_ONLY)?;
-        let dns = Arc::new(dll.open("inbound and !loopback and udp.SrcPort == 53", PRIORITY, FLAG_DIVERT)?);
+        let send = dll.open("false", PRIORITY, FLAG_SEND_ONLY, "WinDivert")?;
+        let dns = Arc::new(dll.open("inbound and !loopback and udp.SrcPort == 53", PRIORITY, FLAG_DIVERT, "WinDivert")?);
         let sock = dll
-            .open_layer("outbound and !loopback and (tcp or udp.DstPort != 53)", LAYER_SOCKET, 0, FLAG_SNIFF_RECV_ONLY)
+            .open_layer("outbound and !loopback and (tcp or udp.DstPort != 53)", LAYER_SOCKET, 0, FLAG_SNIFF_RECV_ONLY, "WinDivert")
             .ok()
             .map(Arc::new);
         let inner = Arc::new(Inner {
@@ -503,13 +389,18 @@ fn reopen(inner: &Arc<Inner>) {
         std::net::IpAddr::V4(v) => Some(v),
         _ => None,
     });
-    let filter = build_filter(&inner.ips.lock().unwrap(), exclude);
+    let (filter, truncated) = build_filter(&inner.ips.lock().unwrap(), exclude);
     let mut slot = inner.capture.lock().unwrap();
     if slot.as_ref().map(|(f, _)| Some(f) == filter.as_ref()).unwrap_or(filter.is_none()) {
         return;
     }
+    if truncated > 0 {
+        (inner.log)(format!(
+            "WARP для программ: превышен лимит фильтра WinDivert, {truncated} старых IP-адресов пропущено"
+        ));
+    }
     let new = match filter {
-        Some(f) => match inner.dll.open(&f, PRIORITY, FLAG_DIVERT) {
+        Some(f) => match inner.dll.open(&f, PRIORITY, FLAG_DIVERT, "WinDivert") {
             Ok(h) => {
                 let h = Arc::new(h);
                 let (i, h2) = (inner.clone(), h.clone());
@@ -702,12 +593,14 @@ mod tests {
     fn filter_groups_subnets() {
         let mut s = IpSet::default();
         s.add(&[Ipv4Addr::new(104, 18, 32, 1), Ipv4Addr::new(104, 18, 32, 2), Ipv4Addr::new(35, 186, 224, 25), Ipv4Addr::new(192, 168, 1, 1)], &[]);
-        let f = build_filter(&s, Some(Ipv4Addr::new(162, 159, 192, 1))).unwrap();
+        let (f, truncated) = build_filter(&s, Some(Ipv4Addr::new(162, 159, 192, 1)));
+        let f = f.unwrap();
+        assert_eq!(truncated, 0);
         assert!(f.contains("ip.DstAddr >= 104.18.32.0 and ip.DstAddr <= 104.18.32.255"), "{f}");
         assert!(f.contains("ip.DstAddr == 35.186.224.25"));
         assert!(!f.contains("192.168"));
         assert!(f.contains("ip.DstAddr != 162.159.192.1"));
         assert!(f.contains("udp.DstPort != 53"));
-        assert!(build_filter(&IpSet::default(), None).is_none());
+        assert!(build_filter(&IpSet::default(), None).0.is_none());
     }
 }

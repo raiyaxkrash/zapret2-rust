@@ -64,21 +64,10 @@ async fn system_resolve(domain: &str) -> Vec<IpAddr> {
     }
 }
 
-/// Ответ DNS-over-HTTPS (Cloudflare, запасной — Google).
-async fn doh_resolve(c: &reqwest::Client, domain: &str) -> Option<Vec<IpAddr>> {
-    for url in [
-        format!("https://cloudflare-dns.com/dns-query?name={domain}&type=A"),
-        format!("https://dns.google/resolve?name={domain}&type=A"),
-    ] {
-        let Ok(resp) = c.get(&url).header("accept", "application/dns-json").send().await else { continue };
-        let Ok(v) = resp.json::<serde_json::Value>().await else { continue };
-        let ips: Vec<IpAddr> = v["Answer"]
-            .as_array()
-            .map(|a| a.iter().filter(|r| r["type"] == 1).filter_map(|r| r["data"].as_str()?.parse().ok()).collect())
-            .unwrap_or_default();
-        return Some(ips);
-    }
-    None
+/// Ответ DNS-over-HTTPS напрямую по IP (Cloudflare 1.1.1.1, запасной — Google 8.8.8.8),
+/// без зависимости от системного DNS и прокси.
+async fn doh_resolve(_c: &reqwest::Client, domain: &str) -> Option<Vec<IpAddr>> {
+    crate::dns_guard::resolve_doh_a(domain).await
 }
 
 async fn tcp_ok(ip: IpAddr) -> bool {

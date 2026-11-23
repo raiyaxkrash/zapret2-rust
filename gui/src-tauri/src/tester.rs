@@ -116,6 +116,62 @@ fn http_client() -> Result<&'static reqwest::Client, String> {
         .map_err(Clone::clone)
 }
 
+/// Проверяет, не перенаправил ли провайдер запрос на страницу-заглушку блокировки.
+fn is_block_redirect(original_url: &str, final_url: &str) -> bool {
+    let host_of = |u: &str| {
+        u.split("://")
+            .nth(1)
+            .unwrap_or(u)
+            .split(['/', ':', '?'])
+            .next()
+            .unwrap_or("")
+            .to_ascii_lowercase()
+    };
+    let orig = host_of(original_url);
+    let fin = host_of(final_url);
+    if fin.is_empty() || fin == orig || fin.ends_with(&format!(".{orig}")) || orig.ends_with(&format!(".{fin}")) {
+        return false;
+    }
+    ["warning.", "block.", "blocked.", "rkn.", "eais.", "fz139", "minjust", "blackhole", "stub."]
+        .iter()
+        .any(|pat| fin.contains(pat))
+}
+
+/// Лёгкая проверка доступности QUIC (UDP:443): отправляет 1200-байтный QUIC Long Header
+/// (GREASE-версия по RFC 9000 §6.1) и ждёт ответ Version Negotiation от сервера.
+/// Если TCP к YouTube работает, а UDP:443 молчит — QUIC режется провайдером и его лучше выключить.
+async fn probe_quic_udp(host: &str) -> bool {
+    let Ok(Ok(mut addrs)) = tokio::time::timeout(Duration::from_secs(3), tokio::net::lookup_host((host, 443))).await else {
+        return false;
+    };
+    let Some(target) = addrs.find(|a| a.is_ipv4()) else {
+        return false;
+    };
+    let Ok(sock) = tokio::net::UdpSocket::bind("0.0.0.0:0").await else {
+        return false;
+    };
+    if sock.connect(target).await.is_err() {
+        return false;
+    }
+    // RFC 9000: Long Header (0xc0), GREASE version 0x0a0a0a0a, DCID len=8, SCID len=8, padded to 1200 bytes.
+    let mut pkt = vec![0u8; 1200];
+    pkt[0] = 0xc0;
+    pkt[1..5].copy_from_slice(&[0x0a, 0x0a, 0x0a, 0x0a]);
+    pkt[5] = 8; // DCID len
+    let _ = getrandom::getrandom(&mut pkt[6..14]);
+    pkt[14] = 8; // SCID len
+    let _ = getrandom::getrandom(&mut pkt[15..23]);
+
+    if sock.send(&pkt).await.is_err() {
+        return false;
+    }
+    let mut resp = [0u8; 256];
+    matches!(
+        tokio::time::timeout(Duration::from_millis(2200), sock.recv(&mut resp)).await,
+        Ok(Ok(n)) if n >= 7 && (resp[0] & 0x80) != 0
+    )
+}
+
 pub(crate) async fn check(service: String, url: String) -> CheckResult {
     let started = Instant::now();
     let fail = |url: String, service: String, ms: u64, bytes: usize, e: String| CheckResult { url, service, ok: false, ms, bytes, error: Some(e) };
@@ -124,8 +180,18 @@ pub(crate) async fn check(service: String, url: String) -> CheckResult {
         Err(e) => return fail(url, service, 0, 0, e),
     };
     let mut bytes = 0usize;
+    let mut block_reason: Option<String> = None;
     let res: Result<(), reqwest::Error> = async {
         let mut resp = client.get(&url).send().await?;
+        let status = resp.status().as_u16();
+        if status == 451 {
+            block_reason = Some("заблокировано (HTTP 451)".into());
+            return Ok(());
+        }
+        if is_block_redirect(&url, resp.url().as_str()) {
+            block_reason = Some("перенаправление на заглушку провайдера".into());
+            return Ok(());
+        }
         while let Some(chunk) = resp.chunk().await? {
             bytes += chunk.len();
             if bytes >= ENOUGH_BYTES {
@@ -136,6 +202,9 @@ pub(crate) async fn check(service: String, url: String) -> CheckResult {
     }
     .await;
     let ms = started.elapsed().as_millis() as u64;
+    if let Some(reason) = block_reason {
+        return fail(url, service, ms, bytes, reason);
+    }
     match res {
         Ok(()) => CheckResult { url, service, ok: true, ms, bytes, error: None },
         Err(e) => {
@@ -283,55 +352,25 @@ async fn run_inner(app: &AppHandle, site: Option<String>) -> Result<TestReport, 
     let has_other = urls.iter().any(|(s, _)| s != "youtube");
     let has_yt = urls.iter().any(|(s, _)| s == "youtube");
     let best = if has_other { pick(&results, |r| r.other_ok) } else { pick(&results, |r| r.ok) };
-    let mut best_youtube = if has_yt { pick(&results, |r| r.yt_ok) } else { None };
+    let best_youtube = if has_yt { pick(&results, |r| r.yt_ok) } else { None };
     let mut recommend_quic_off = false;
 
-    // Если при включённом QUIC ни одна стратегия не открыла весь YouTube, пробуем 2 лучших кандидата с выключенным QUIC.
-    let yt_total = urls.iter().filter(|(s, _)| s == "youtube").count();
-    let best_yt_score = results.iter().map(|r| r.yt_ok).max().unwrap_or(0);
-    if !cancelled && site.is_none() && settings.quic && has_yt && best_yt_score < yt_total {
-        let mut candidates: Vec<String> = Vec::new();
-        if let Some(id) = &best_youtube {
-            candidates.push(id.clone());
-        }
-        if let Some(id) = &best {
-            if !candidates.contains(id) {
-                candidates.push(id.clone());
-            }
-        }
-        for s in strategies.iter().take(2) {
-            if candidates.len() >= 2 {
-                break;
-            }
-            if !candidates.contains(&s.id) {
-                candidates.push(s.id.clone());
-            }
-        }
-        let mut no_quic_settings = settings.clone();
-        no_quic_settings.quic = false;
-        let yt_urls: Vec<_> = urls.iter().filter(|(s, _)| s == "youtube").cloned().collect();
-        for cid in candidates {
-            if state.cancel_test.load(Ordering::SeqCst) {
-                cancelled = true;
-                break;
-            }
-            let cname = strategies.iter().find(|s| s.id == cid).map(|s| s.name.as_str()).unwrap_or(&cid);
-            let label = format!("{cname} (без QUIC)");
-            let _ = app.emit("test-progress", Progress { index: total, total, current: &label, result: None });
-            if crate::start_with(app, &no_quic_settings, &cid, Some(&cid)).await.is_ok() {
-                let r = run_checks(&cid, cname, &yt_urls).await;
+    // Реальная проверка QUIC (UDP:443) для YouTube при активной лучшей стратегии:
+    // если TCP к YouTube открывается, а UDP:443 не отвечает — рекомендуем отключить QUIC.
+    if !cancelled && site.is_none() && settings.quic && has_yt {
+        if let Some(cid) = best_youtube.as_deref().or(best.as_deref()) {
+            let _ = app.emit("test-progress", Progress { index: total, total, current: "Проверка QUIC (UDP 443)", result: None });
+            if crate::start_with(app, &settings, cid, Some(cid)).await.is_ok() {
+                let (q1, q2) = tokio::join!(
+                    probe_quic_udp("www.youtube.com"),
+                    probe_quic_udp("redirector.googlevideo.com"),
+                );
                 state.engine.stop(app);
-                state.engine.log(app, format!("[app] {label}: YouTube {}/{}", r.yt_ok, r.yt_total));
-                if r.yt_ok > best_yt_score {
+                if !q1 && !q2 {
                     recommend_quic_off = true;
-                    best_youtube = Some(cid.clone());
-                    if let Some(existing) = results.iter_mut().find(|x| x.id == cid) {
-                        existing.yt_ok = r.yt_ok;
-                        existing.ok = existing.other_ok + r.yt_ok;
-                    }
-                    if r.yt_ok == yt_total {
-                        break;
-                    }
+                    state.engine.log(app, "[app] QUIC (UDP 443) для YouTube не отвечает — рекомендуется выключить QUIC");
+                } else {
+                    state.engine.log(app, "[app] QUIC (UDP 443) для YouTube отвечает нормально");
                 }
             }
         }
@@ -351,5 +390,18 @@ async fn run_inner(app: &AppHandle, site: Option<String>) -> Result<TestReport, 
         *state.last_report.lock().unwrap() = Some(report.clone());
     }
     Ok(report)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_isp_block_redirects() {
+        assert!(is_block_redirect("https://rutracker.org/", "http://warning.rt.ru/?id=123"));
+        assert!(is_block_redirect("https://x.com/", "https://block.mts.ru/stub"));
+        assert!(!is_block_redirect("https://www.youtube.com/", "https://www.youtube.com/watch?v=1"));
+        assert!(!is_block_redirect("https://redirector.googlevideo.com/?c=WEB", "https://rr1---sn.googlevideo.com/video"));
+    }
 }
 

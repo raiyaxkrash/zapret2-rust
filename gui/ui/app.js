@@ -133,6 +133,23 @@ function render() {
   $$(".services .setting").forEach((el) => el.classList.toggle("checked", !!s[el.dataset.key]));
   $$("#customMode button").forEach((b) => b.classList.toggle("active", b.dataset.mode === s.custom_mode));
   $$("#themeSel button").forEach((b) => b.classList.toggle("active", b.dataset.theme === (s.theme || "system")));
+
+  // Защита DNS (DoH): провайдер и счётчики
+  const dohRow = $("#dohProviderRow");
+  if (dohRow) {
+    dohRow.hidden = !s.dns_doh;
+    const prov = s.doh_provider || "auto";
+    if ($("#dohProvider").value !== prov) $("#dohProvider").value = prov;
+    $("#dohCustomWrap").hidden = prov !== "custom";
+    if (document.activeElement !== $("#dohCustomUrl")) $("#dohCustomUrl").value = s.doh_custom_url || "";
+    const dg = state.dns_guard;
+    const desc = $("#dnsDohDesc");
+    if (desc) {
+      desc.textContent = dg?.running
+        ? `Активно · запросов: ${dg.total} · из кэша: ${dg.cached}` + (dg.fallback ? ` · напрямую: ${dg.fallback}` : "")
+        : "Шифрует DNS-запросы через выбранный DoH-сервер, если провайдер подменяет адреса сайтов";
+    }
+  }
   $$("#langSel button").forEach((b) => b.classList.toggle("active", b.dataset.lang === (s.lang || "auto")));
   applyMode(s);
   $("#customModeCard").hidden = !s.custom;
@@ -477,14 +494,19 @@ function renderStrategies() {
       + (report?.best_youtube === st.id ? ` <span class="badge best">лучшая для YouTube</span>` : "")
       + (state?.settings.youtube_strategy === st.id ? ` <span class="badge">выбрана для YouTube</span>` : "");
     const args = [...st.tls, ...st.http, ...(st.quic || [])].join(" ");
+    const isUserPreset = st.id.startsWith("user_");
     const extra = st.id === "custom" ? `
       <div class="custom-fields" data-stop>
         <div><label>TLS (HTTPS)</label><textarea data-custom="custom_tls">${esc(state?.settings.custom_tls)}</textarea></div>
         <div><label>HTTP</label><textarea data-custom="custom_http">${esc(state?.settings.custom_http)}</textarea></div>
         <div><label>QUIC (пусто — как в остальных стратегиях)</label><textarea data-custom="custom_quic">${esc(state?.settings.custom_quic)}</textarea></div>
-        <div><button class="btn primary" data-save-custom>Сохранить параметры</button></div>
+        <div class="field-row">
+          <button class="btn primary" data-save-custom>Сохранить параметры</button>
+          <input type="text" data-custom-name placeholder="Название пресета…" maxlength="48" style="max-width:220px" />
+          <button class="btn" data-save-preset>Сохранить как пресет</button>
+        </div>
       </div>`
-      : `<button class="link-btn" data-stop data-toggle-args>Показать параметры</button><div class="strategy-args"><pre class="code">${esc(args)}</pre></div>`;
+      : `<div class="field-row" style="width:auto;gap:12px" data-stop><button class="link-btn" data-toggle-args>Показать параметры</button>${isUserPreset ? `<button class="link-btn" data-del-custom="${esc(st.id)}">Удалить</button>` : ""}</div><div class="strategy-args"><pre class="code">${esc(args)}</pre></div>`;
     return `
       <div class="card strategy" data-id="${esc(st.id)}">
         <span class="radio"></span>
@@ -515,6 +537,27 @@ function renderStrategies() {
     loadStrategies();
     loadCommandLine();
   });
+  $("[data-save-preset]", list)?.addEventListener("click", async () => {
+    const name = ($("[data-custom-name]", list)?.value || "").trim();
+    if (!name) { toast("Укажите название пресета", "err"); return; }
+    const tls = ($("[data-custom=custom_tls]", list)?.value || "").trim();
+    const http = ($("[data-custom=custom_http]", list)?.value || "").trim();
+    const quic = ($("[data-custom=custom_quic]", list)?.value || "").trim();
+    try {
+      state.settings = await invoke("save_custom_strategy", { name, tls, http, quic });
+      toast("Стратегия сохранена");
+      await loadStrategies();
+      loadCommandLine();
+    } catch (e) { toast(errText(e), "err"); }
+  });
+  $$("[data-del-custom]", list).forEach((b) => b.addEventListener("click", async () => {
+    try {
+      state.settings = await invoke("delete_custom_strategy", { id: b.dataset.delCustom });
+      toast("Стратегия удалена");
+      await loadStrategies();
+      loadCommandLine();
+    } catch (e) { toast(errText(e), "err"); }
+  }));
   renderStrategySelection();
   if (state) render();
 }
@@ -1437,6 +1480,20 @@ listen("app-update-available", ({ payload }) => {
   toast(`Доступна версия ${payload.latest}. Нажмите «Обновить» вверху окна.`, "info", 8000);
   setStatus($("#appStatus"), `Доступна версия ${payload.latest}`, "good");
   $("#appInstall").hidden = false;
+});
+$("#dohProvider")?.addEventListener("change", async () => {
+  const v = $("#dohProvider").value;
+  $("#dohCustomWrap").hidden = v !== "custom";
+  if (v !== "custom" || /^https:\/\//.test($("#dohCustomUrl").value.trim())) {
+    await saveSettings({ doh_provider: v }, { quiet: true });
+    toast("Сервер DoH обновлён");
+  }
+});
+$("#saveDohCustom")?.addEventListener("click", async () => {
+  const v = $("#dohCustomUrl").value.trim();
+  if (!/^https:\/\//.test(v)) return toast("Адрес должен начинаться с https://", "err");
+  await saveSettings({ doh_provider: "custom", doh_custom_url: v }, { quiet: true });
+  toast("Сервер DoH обновлён");
 });
 $("#saveUpdateUrl").addEventListener("click", async () => {
   const v = $("#updateUrl").value.trim();

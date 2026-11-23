@@ -1,4 +1,5 @@
 mod autostart;
+mod backup;
 mod content;
 mod diag;
 mod dns_guard;
@@ -17,6 +18,7 @@ mod traffic;
 mod util;
 mod warp;
 mod watchdog;
+mod windivert;
 mod zapret_update;
 
 use std::{
@@ -381,9 +383,12 @@ fn stop_all(app: &AppHandle) {
     state.warp.stop(app);
 }
 
-async fn dns_apply(app: &AppHandle) -> CmdResult<()> {
+async fn dns_apply(app: &AppHandle, restart: bool) -> CmdResult<()> {
     let state = app.state::<AppState>();
-    let on = state.settings.lock().unwrap().dns_doh;
+    let (on, provider, custom_url) = {
+        let s = state.settings.lock().unwrap();
+        (s.dns_doh, s.doh_provider.clone(), s.doh_custom_url.clone())
+    };
     if !on {
         if state.dns_guard.is_running() {
             state.dns_guard.stop();
@@ -391,12 +396,12 @@ async fn dns_apply(app: &AppHandle) -> CmdResult<()> {
         }
         return Ok(());
     }
-    if state.dns_guard.is_running() {
+    if state.dns_guard.is_running() && !restart {
         return Ok(());
     }
     ensure_engine(app).await?;
-    state.dns_guard.start(&state.paths.engine.join("bin"))?;
-    state.engine.log(app, "[app] Защита DNS (DoH) включена");
+    state.dns_guard.start(&state.paths.engine.join("bin"), &provider, &custom_url)?;
+    state.engine.log(app, format!("[app] Защита DNS (DoH: {provider}) включена"));
     Ok(())
 }
 
@@ -654,6 +659,7 @@ struct AppInfo {
     data_dir: String,
     portable: bool,
     dns_doh_running: bool,
+    dns_guard: dns_guard::DnsGuardStatus,
     user_domains: usize,
     auto_domains: usize,
     autostart: bool,
@@ -677,6 +683,7 @@ fn get_state(app: AppHandle, state: State<'_, AppState>) -> AppInfo {
         data_dir: state.paths.root.to_string_lossy().to_string(),
         portable: state.paths.portable,
         dns_doh_running: state.dns_guard.is_running(),
+        dns_guard: state.dns_guard.status(),
         user_domains: paths::count_domains(&state.paths.lists.join("user.txt")),
         auto_domains: paths::count_domains(&state.paths.auto_list()),
         autostart: autostart::is_enabled(),
@@ -841,6 +848,7 @@ async fn save_settings(app: AppHandle, new: Settings) -> CmdResult<Settings> {
         || old.packs != new.packs
         || old.warp != new.warp
         || old.debug_log != new.debug_log
+        || old.custom_strategies != new.custom_strategies
         || (new.strategy == "custom"
             && (old.custom_tls != new.custom_tls || old.custom_http != new.custom_http || old.custom_quic != new.custom_quic));
     if engine_changed {
@@ -865,8 +873,9 @@ async fn save_settings(app: AppHandle, new: Settings) -> CmdResult<Settings> {
     {
         warp_apply(&app, warp_restart).await?;
     }
-    if old.dns_doh != new.dns_doh {
-        dns_apply(&app).await?;
+    let doh_changed = old.doh_provider != new.doh_provider || old.doh_custom_url != new.doh_custom_url;
+    if old.dns_doh != new.dns_doh || (new.dns_doh && doh_changed) {
+        dns_apply(&app, doh_changed).await?;
     }
     let tg_changed = old.tg_proxy_port != new.tg_proxy_port || old.tg_proxy_secret != new.tg_proxy_secret;
     if old.tg_proxy != new.tg_proxy || (new.tg_proxy && tg_changed) {
@@ -924,67 +933,58 @@ async fn add_warp_domain(app: AppHandle, input: String) -> CmdResult<String> {
     })
 }
 
-#[derive(Serialize, serde::Deserialize)]
-struct BackupBundle {
-    version: u32,
-    #[serde(default)]
-    app_version: String,
-    #[serde(default)]
-    exported_at: u64,
-    settings: Settings,
-    #[serde(default)]
-    user_list: String,
-    #[serde(default)]
-    exclude_list: String,
+#[tauri::command]
+fn dns_guard_status(state: State<'_, AppState>) -> dns_guard::DnsGuardStatus {
+    state.dns_guard.status()
+}
+
+#[tauri::command]
+async fn save_custom_strategy(app: AppHandle, name: String, tls: String, http: String, quic: String) -> CmdResult<Settings> {
+    let name = name.trim().to_string();
+    if name.is_empty() || name.chars().count() > 48 {
+        return Err("Укажите название стратегии (от 1 до 48 символов)".into());
+    }
+    let state = app.state::<AppState>();
+    let mut s = state.settings.lock().unwrap().clone();
+    let id = format!("user_{}", util::now_unix());
+    if let Some(existing) = s.custom_strategies.iter_mut().find(|c| c.name.eq_ignore_ascii_case(&name)) {
+        existing.tls = tls;
+        existing.http = http;
+        existing.quic = quic;
+        s.strategy = existing.id.clone();
+    } else {
+        s.custom_strategies.push(settings::CustomStrategy { id: id.clone(), name, tls, http, quic });
+        s.strategy = id;
+    }
+    save_settings(app, s).await
+}
+
+#[tauri::command]
+async fn delete_custom_strategy(app: AppHandle, id: String) -> CmdResult<Settings> {
+    let state = app.state::<AppState>();
+    let mut s = state.settings.lock().unwrap().clone();
+    let before = s.custom_strategies.len();
+    s.custom_strategies.retain(|c| c.id != id);
+    if s.custom_strategies.len() == before {
+        return Err("Стратегия не найдена".into());
+    }
+    if s.strategy == id {
+        s.strategy = Settings::default().strategy;
+    }
+    if s.youtube_strategy == id {
+        s.youtube_strategy.clear();
+    }
+    save_settings(app, s).await
 }
 
 #[tauri::command]
 fn export_backup(app: AppHandle, state: State<'_, AppState>) -> CmdResult<String> {
-    let settings = state.settings.lock().unwrap().clone();
-    let user_list = state.paths.list_file("user").and_then(|p| fs::read_to_string(p).ok()).unwrap_or_default();
-    let exclude_list = state.paths.list_file("exclude").and_then(|p| fs::read_to_string(p).ok()).unwrap_or_default();
-    let bundle = BackupBundle {
-        version: 1,
-        app_version: app.package_info().version.to_string(),
-        exported_at: util::now_unix(),
-        settings,
-        user_list,
-        exclude_list,
-    };
-    let json = serde_json::to_string_pretty(&bundle).map_err(|e| e.to_string())?;
-    let downloads = std::env::var_os("USERPROFILE")
-        .map(std::path::PathBuf::from)
-        .map(|p| p.join("Downloads"))
-        .filter(|p| p.is_dir())
-        .unwrap_or_else(|| state.paths.root.clone());
-    let filename = format!("zapret2-backup-{}.json", util::now_unix());
-    let dst = downloads.join(&filename);
-    fs::write(&dst, json).map_err(|e| format!("Не удалось сохранить резервную копию: {e}"))?;
-    let _ = util::hidden_command("explorer").arg(format!("/select,{}", dst.display())).spawn();
-    Ok(format!("Резервная копия сохранена: {filename}"))
+    backup::export(&app, &state)
 }
 
 #[tauri::command]
 async fn import_backup(app: AppHandle, json: String) -> CmdResult<String> {
-    let bundle: BackupBundle = serde_json::from_str(&json)
-        .map_err(|_| "Файл резервной копии повреждён или не подходит".to_string())?;
-    let state = app.state::<AppState>();
-    let user_norm = util::normalize_list_text(&bundle.user_list)?;
-    let excl_norm = util::normalize_list_text(&bundle.exclude_list)?;
-    if let Some(p) = state.paths.list_file("user") {
-        fs::write(p, user_norm).map_err(|e| format!("Не удалось сохранить список: {e}"))?;
-    }
-    if let Some(p) = state.paths.list_file("exclude") {
-        fs::write(p, excl_norm).map_err(|e| format!("Не удалось сохранить список: {e}"))?;
-    }
-    let mut next = bundle.settings;
-    let current_secret = state.settings.lock().unwrap().tg_proxy_secret.clone();
-    if !tgproxy::valid_secret(&next.tg_proxy_secret) {
-        next.tg_proxy_secret = current_secret;
-    }
-    if next.app_update_url.trim().is_empty() {
-        next.app_update_url = settings::DEFAULT_APP_UPDATE_URL.into();
-    }
+    let next = backup::parse_and_write_lists(&app, &json)?;
     save_settings(app, next).await?;
     Ok("Настройки и списки восстановлены из резервной копии".into())
 }
@@ -1477,7 +1477,7 @@ pub fn run() {
             if settings.dns_doh {
                 let h = handle.clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Err(e) = dns_apply(&h).await {
+                    if let Err(e) = dns_apply(&h, false).await {
                         let _ = h.emit("toast", format!("Защита DNS: {e}"));
                     }
                 });
@@ -1577,6 +1577,9 @@ pub fn run() {
             warp_reset_account,
             export_backup,
             import_backup,
+            dns_guard_status,
+            save_custom_strategy,
+            delete_custom_strategy,
             quick_check,
             enable_testsigning,
             get_packs,

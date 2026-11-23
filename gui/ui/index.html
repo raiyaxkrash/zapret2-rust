@@ -445,7 +445,20 @@
 
           <h2 class="section-title">Дополнительно</h2>
           <div class="settings-group">
-            <label class="setting"><span data-icon="globe"></span><div class="setting-text"><div class="setting-title">Защита DNS (DNS-over-HTTPS)</div><div class="setting-desc">Шифрует DNS-запросы через 1.1.1.1 и 8.8.8.8, если провайдер подменяет адреса сайтов</div></div><div class="setting-control"><span class="state-label"></span><span class="switch"><input type="checkbox" data-setting="dns_doh" /><i></i></span></div></label>
+            <label class="setting"><span data-icon="globe"></span><div class="setting-text"><div class="setting-title">Защита DNS (DNS-over-HTTPS)</div><div class="setting-desc" id="dnsDohDesc">Шифрует DNS-запросы через выбранный DoH-сервер, если провайдер подменяет адреса сайтов</div></div><div class="setting-control"><span class="state-label"></span><span class="switch"><input type="checkbox" data-setting="dns_doh" /><i></i></span></div></label>
+            <div class="setting" id="dohProviderRow" hidden><span data-icon="server"></span><div class="setting-text"><div class="setting-title">Сервер DNS-over-HTTPS</div><div class="setting-desc">Выберите сервер или укажите свой HTTPS-адрес RFC 8484</div></div>
+              <div class="field-row" style="max-width:460px;flex-wrap:wrap;justify-content:flex-end">
+                <select id="dohProvider" style="width:auto">
+                  <option value="auto">Авто (1.1.1.1 / 8.8.8.8)</option>
+                  <option value="cloudflare">Cloudflare (1.1.1.1)</option>
+                  <option value="google">Google (8.8.8.8)</option>
+                  <option value="quad9">Quad9 (9.9.9.9)</option>
+                  <option value="adguard">AdGuard (94.140.14.14)</option>
+                  <option value="custom">Свой URL</option>
+                </select>
+                <div class="field-row" id="dohCustomWrap" style="width:100%" hidden><input id="dohCustomUrl" type="url" placeholder="https://example.com/dns-query" /><button class="btn" id="saveDohCustom">Сохранить</button></div>
+              </div>
+            </div>
             <label class="expert-only setting"><span data-icon="terminal"></span><div class="setting-text"><div class="setting-title">Подробный журнал</div><div class="setting-desc">winws2 будет писать отладочный вывод (--debug). Немного нагружает процессор</div></div><div class="setting-control"><span class="state-label"></span><span class="switch"><input type="checkbox" data-setting="debug_log" /><i></i></span></div></label>
             <div class="expert-only setting"><span data-icon="download"></span><div class="setting-text"><div class="setting-title">Источник обновлений приложения</div><div class="setting-desc">Адрес файла latest.json</div></div>
               <div class="field-row" style="max-width:460px"><input id="updateUrl" type="url" /><button class="btn" id="saveUpdateUrl">Сохранить</button></div>
