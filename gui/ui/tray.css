@@ -1,17 +1,17 @@
 /* Мини-окно в трее — тот же монохром, что и главное окно. */
 body { height: 100vh; background: var(--bg); }
 
-.fly { height: 100%; display: flex; flex-direction: column; padding: 14px 14px 0; }
+.fly { height: 100%; display: flex; flex-direction: column; padding: 16px 16px 0; }
 
-.fly-head { display: flex; align-items: center; gap: 9px; margin-bottom: 14px; }
+.fly-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .fly-logo { width: 16px; height: 16px; color: var(--text); }
-.fly-title { font-weight: 600; font-size: 13.5px; flex: 1; }
+.fly-title { font-weight: 500; font-size: 14px; flex: 1; }
 
-.icon-btn { width: 30px; height: 30px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-2); display: grid; place-items: center; transition: background .12s, color .12s; }
+.icon-btn { width: 32px; height: 32px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-2); display: grid; place-items: center; transition: background-color 140ms var(--ease), color 140ms var(--ease); }
 .icon-btn .ico { width: 16px; height: 16px; }
 .icon-btn:hover { background: var(--hover); color: var(--text); }
 
-.fly-power { display: flex; align-items: center; gap: 14px; width: 100%; padding: 12px; text-align: left; border-radius: var(--r-lg); border: 1px solid var(--line); background: var(--panel); transition: background .12s; }
+.fly-power { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px; text-align: left; border-radius: var(--r-lg); border: 1px solid var(--line); background: var(--panel); transition: background-color 140ms var(--ease); }
 .fly-power:hover { background: var(--hover); }
 .fly-power-ico {
   position: relative; width: 52px; height: 52px; border-radius: 50%; flex-shrink: 0; display: grid; place-items: center; color: #6a6a6a;
@@ -20,27 +20,27 @@ body { height: 100vh; background: var(--bg); }
 }
 :root[data-theme="light"] .fly-power-ico { color: #9a9a9a; background: radial-gradient(circle at 34% 28%, #ffffff 0%, #ececec 55%, #d6d6d6 100%); box-shadow: inset 0 -5px 12px rgba(0, 0, 0, .06); }
 .fly-power-ico .ico { width: 20px; height: 20px; }
-.fly-power.on .fly-power-ico { color: #0a0a0a; background: radial-gradient(circle at 34% 28%, #ffffff 0%, #dcdcdc 32%, #8f8f8f 72%, #5a5a5a 100%); box-shadow: 0 0 26px rgba(255, 255, 255, .18), inset 0 -6px 14px rgba(0, 0, 0, .25); }
-:root[data-theme="light"] .fly-power.on .fly-power-ico { color: #fff; background: radial-gradient(circle at 34% 28%, #6a6a6a 0%, #2b2b2b 45%, #0a0a0a 100%); box-shadow: 0 8px 20px rgba(0, 0, 0, .25); }
+.fly-power.on .fly-power-ico { color: #0a0a0a; background: radial-gradient(circle at 34% 28%, #ffffff 0%, #dcdcdc 32%, #8f8f8f 72%, #5a5a5a 100%); box-shadow: 0 0 0 1px rgba(255, 255, 255, .28), 0 6px 16px rgba(0, 0, 0, .35), inset 0 -6px 14px rgba(0, 0, 0, .25); }
+:root[data-theme="light"] .fly-power.on .fly-power-ico { color: #fff; background: radial-gradient(circle at 34% 28%, #6a6a6a 0%, #2b2b2b 45%, #0a0a0a 100%); box-shadow: 0 8px 20px rgba(0, 0, 0, .22); }
 .spinner { position: absolute; inset: -6px; border-radius: 50%; border: 1.5px solid transparent; border-top-color: var(--text); opacity: 0; }
 .fly-power.busy .spinner { opacity: 1; animation: spin .9s linear infinite; }
 .fly-power-text { display: flex; flex-direction: column; min-width: 0; }
-.fly-state { font-weight: 600; font-size: 16px; letter-spacing: -.3px; }
-.fly-sub { font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+.fly-state { font-weight: 500; font-size: 16px; }
+.fly-sub { font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; font-variant-numeric: tabular-nums; }
 
-.fly-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .14em; color: var(--text-3); margin: 16px 0 8px; }
+.fly-label { font-size: 12px; font-weight: 500; color: var(--text-3); margin: 16px 0 8px; }
 
-.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-.tile { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 0 8px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel); color: var(--text-2); font-size: 11.5px; transition: border-color .12s, color .12s; }
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.tile { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 0 8px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel); color: var(--text-2); font-size: 12px; transition: border-color 140ms var(--ease), color 140ms var(--ease), background-color 140ms var(--ease); }
 .tile > .ico { width: 18px; height: 18px; }
 .tile:hover { border-color: var(--line-2); color: var(--text); }
 .tile.on { color: var(--on-text); background: var(--on); border-color: var(--on); }
 
-.fly-warn { margin-top: 12px; padding: 9px 11px; border-radius: var(--r-md); font-size: 12px; border: 1px solid var(--line-2); color: var(--text); }
+.fly-warn { margin-top: 12px; padding: 8px 12px; border-radius: var(--r-md); font-size: 12px; border: 1px solid var(--line-2); color: var(--text); }
 .fly-warn.err { border-color: color-mix(in srgb, var(--err) 45%, var(--line)); }
 
-.fly-foot { margin: auto -14px 0; padding: 6px 8px 6px 8px; display: flex; align-items: center; gap: 4px; border-top: 1px solid var(--line); flex-shrink: 0; }
-.foot-btn { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); font-size: 13px; transition: background .12s; }
+.fly-foot { margin: auto -16px 0; padding: 8px; display: flex; align-items: center; gap: 4px; border-top: 1px solid var(--line); flex-shrink: 0; }
+.foot-btn { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); font-size: 13px; transition: background-color 140ms var(--ease); }
 .foot-btn:hover { background: var(--hover); }
-.foot-btn .ico { width: 15px; height: 15px; color: var(--text-2); }
+.foot-btn .ico { width: 16px; height: 16px; color: var(--text-2); }
 .foot-spacer { flex: 1; }
